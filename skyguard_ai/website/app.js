@@ -869,24 +869,42 @@ SG.initTNMap = function () {
   /* initial render */
   selectStation(0);
 
-  /* ── Dark / Light tile toggle ────────────────────────── */
-  let _darkMode = true;
-  const _darkURL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  const _lightURL= 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  /* ── Multi-Style Tile Selector & Compass Control ─────── */
   let _tileRef = null;
-  /* store reference to the tile layer we added */
   map.eachLayer(l => { if (l instanceof L.TileLayer) _tileRef = l; });
 
-  SG._tnMapToggleTheme = function () {
-    _darkMode = !_darkMode;
-    if (_tileRef) map.removeLayer(_tileRef);
-    _tileRef = L.tileLayer(_darkMode ? _darkURL : _lightURL, {
+  const MAP_STYLES = {
+    dark: {
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19,
-    }).addTo(map);
+      subdomains: 'abcd', maxZoom: 19
+    },
+    streets: {
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      subdomains: 'abcd', maxZoom: 19
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
+      maxZoom: 18
+    }
+  };
+
+  SG.setTNMapStyle = function (styleKey) {
+    const cfg = MAP_STYLES[styleKey] || MAP_STYLES.dark;
+    if (_tileRef) map.removeLayer(_tileRef);
+    _tileRef = L.tileLayer(cfg.url, cfg).addTo(map);
     _tileRef.bringToBack();
-    const btn = document.getElementById('tnMapThemeBtn');
-    if (btn) btn.textContent = _darkMode ? '🌙 Dark Map' : '☀️ Light Map';
+  };
+
+  SG.resetTNMapOrientation = function () {
+    map.flyTo([10.85, 78.65], 7, { duration: 0.8 });
+    const compassBtn = document.getElementById('tnCompassBtn');
+    if (compassBtn) {
+      compassBtn.style.transform = 'scale(1.2) rotate(360deg)';
+      setTimeout(() => { compassBtn.style.transform = ''; }, 400);
+    }
   };
 };
 
@@ -2042,22 +2060,45 @@ SG.initLiveLocation = function () {
     if (userLat !== null) map.setView([userLat, userLng], 10, { animate:true });
   });
 
-  /* ── Dark / Light tile toggle ────────────────────────── */
-  let _locDark = true;
-  const _locDarkURL  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  const _locLightURL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  /* ── Multi-Style Tile Selector & Compass Control ─────── */
   let _locTileRef = null;
   map.eachLayer(l => { if (l instanceof L.TileLayer) _locTileRef = l; });
 
-  SG._locMapToggleTheme = function () {
-    _locDark = !_locDark;
-    if (_locTileRef) map.removeLayer(_locTileRef);
-    _locTileRef = L.tileLayer(_locDark ? _locDarkURL : _locLightURL, {
+  const LOC_MAP_STYLES = {
+    dark: {
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19,
-    }).addTo(map);
+      subdomains: 'abcd', maxZoom: 19
+    },
+    streets: {
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      subdomains: 'abcd', maxZoom: 19
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
+      maxZoom: 18
+    }
+  };
+
+  SG.setLocMapStyle = function (styleKey) {
+    const cfg = LOC_MAP_STYLES[styleKey] || LOC_MAP_STYLES.dark;
+    if (_locTileRef) map.removeLayer(_locTileRef);
+    _locTileRef = L.tileLayer(cfg.url, cfg).addTo(map);
     _locTileRef.bringToBack();
-    const btn = document.getElementById('locMapThemeBtn');
-    if (btn) btn.textContent = _locDark ? '🌙 Dark Map' : '☀️ Light Map';
+  };
+
+  SG.resetLocMapOrientation = function () {
+    if (userLat !== null) {
+      map.flyTo([userLat, userLng], 11, { duration: 0.8 });
+    } else {
+      map.flyTo([10.85, 78.65], 7, { duration: 0.8 });
+    }
+    const compassBtn = document.getElementById('locCompassBtn');
+    if (compassBtn) {
+      compassBtn.style.transform = 'scale(1.2) rotate(360deg)';
+      setTimeout(() => { compassBtn.style.transform = ''; }, 400);
+    }
   };
 };
