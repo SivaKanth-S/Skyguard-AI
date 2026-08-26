@@ -481,61 +481,18 @@ SG.initDashboard = function () {
 };
 
 /* ============================================================
-   GOOGLE MAPS API READY CALLBACKS
+   MAP READY CALLBACKS & HELPERS (Leaflet / OpenStreetMap)
    ============================================================ */
-SG._onGoogleMapsReady = function () {
+SG.initAllMaps = function () {
   SG.initTNMap();
   SG.initAddStation();
 };
-SG._onGoogleMapsReadyLoc = function () {
-  SG.initLiveLocation();
-};
 
 /* ============================================================
-   DARK / LIGHT MAP STYLE DEFINITIONS
-   ============================================================ */
-const GM_DARK_STYLES = [
-  { elementType:'geometry',       stylers:[{ color:'#0d1117' }] },
-  { elementType:'labels.text.stroke', stylers:[{ color:'#0d1117' }] },
-  { elementType:'labels.text.fill',   stylers:[{ color:'#8b949e' }] },
-  { featureType:'administrative',     elementType:'geometry', stylers:[{ color:'#1e2530' }] },
-  { featureType:'administrative.country', elementType:'labels.text.fill', stylers:[{ color:'#8b949e' }] },
-  { featureType:'administrative.locality', elementType:'labels.text.fill', stylers:[{ color:'#c9d1d9' }] },
-  { featureType:'poi',            elementType:'labels',    stylers:[{ visibility:'off' }] },
-  { featureType:'road',           elementType:'geometry',  stylers:[{ color:'#161b22' }] },
-  { featureType:'road',           elementType:'geometry.stroke', stylers:[{ color:'#21262d' }] },
-  { featureType:'road',           elementType:'labels.text.fill', stylers:[{ color:'#6e7681' }] },
-  { featureType:'road.highway',   elementType:'geometry',  stylers:[{ color:'#1e2530' }] },
-  { featureType:'road.highway',   elementType:'geometry.stroke', stylers:[{ color:'#30363d' }] },
-  { featureType:'road.highway',   elementType:'labels.text.fill', stylers:[{ color:'#8b949e' }] },
-  { featureType:'transit',        stylers:[{ visibility:'off' }] },
-  { featureType:'water',          elementType:'geometry',  stylers:[{ color:'#0d1117' }] },
-  { featureType:'water',          elementType:'labels.text.fill', stylers:[{ color:'#30363d' }] },
-  { featureType:'landscape',      elementType:'geometry',  stylers:[{ color:'#161b22' }] },
-];
-
-const GM_LIGHT_STYLES = [
-  { elementType:'geometry',       stylers:[{ color:'#f5f5f5' }] },
-  { elementType:'labels.text.stroke', stylers:[{ color:'#f5f5f5' }] },
-  { elementType:'labels.text.fill',   stylers:[{ color:'#333333' }] },
-  { featureType:'administrative',     elementType:'geometry', stylers:[{ color:'#e8e8e8' }] },
-  { featureType:'poi',            elementType:'labels',    stylers:[{ visibility:'off' }] },
-  { featureType:'road',           elementType:'geometry',  stylers:[{ color:'#ffffff' }] },
-  { featureType:'road',           elementType:'geometry.stroke', stylers:[{ color:'#dddddd' }] },
-  { featureType:'road',           elementType:'labels.text.fill', stylers:[{ color:'#666666' }] },
-  { featureType:'road.highway',   elementType:'geometry',  stylers:[{ color:'#dedede' }] },
-  { featureType:'road.highway',   elementType:'labels.text.fill', stylers:[{ color:'#444444' }] },
-  { featureType:'transit',        stylers:[{ visibility:'off' }] },
-  { featureType:'water',          elementType:'geometry',  stylers:[{ color:'#c9e8f5' }] },
-  { featureType:'water',          elementType:'labels.text.fill', stylers:[{ color:'#9e9e9e' }] },
-  { featureType:'landscape',      elementType:'geometry',  stylers:[{ color:'#eeeeee' }] },
-];
-
-/* ============================================================
-   TAMIL NADU MAP — Google Maps
+   TAMIL NADU MAP — Leaflet (CartoDB / OpenStreetMap)
    Each station renders:
-     1. google.maps.Circle — geo-accurate coverage zone
-     2. google.maps.Marker  — station dot with SVG icon
+     1. L.circle — geo-accurate coverage zone
+     2. L.circleMarker — station dot with threat indicator
    Dark / Light theme toggle is built in.
    ============================================================ */
 SG.initTNMap = function () {
