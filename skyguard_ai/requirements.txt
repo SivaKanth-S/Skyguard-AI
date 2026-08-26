@@ -1,0 +1,11 @@
+numpy>=2.0
+pandas>=2.0
+scikit-learn>=1.5
+scipy>=1.13
+matplotlib>=3.9
+joblib>=1.4
+shap>=0.45
+plotly>=5.22
+dash>=2.17
+dash-bootstrap-components>=1.6
+pytest>=9.0

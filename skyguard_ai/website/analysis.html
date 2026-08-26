@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>SkyGuard AI — City Analysis</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ── Analysis page ──────────────────────────────────── */
+    .an-hero-stat .big { font-size:52px; font-weight:800; font-family:var(--mono); color:var(--accent); line-height:1; display:block; }
+    .an-hero-stat small { font-size:12px; color:var(--muted); font-weight:600; }
+
+    /* city + period pickers */
+    .picker-bar {
+      display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+      padding:18px 22px; background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); margin-bottom:24px;
+    }
+    .picker-bar label { font-size:11px; font-weight:700; color:var(--muted);
+                        text-transform:uppercase; letter-spacing:.7px; }
+    .picker-bar select {
+      background:var(--surface2); border:1px solid var(--border);
+      color:var(--text); padding:8px 12px; border-radius:7px;
+      font-size:13px; font-family:var(--font); min-width:220px; cursor:pointer;
+    }
+    .picker-bar select:focus { outline:none; border-color:var(--accent); }
+
+    /* period tabs */
+    .period-tabs { display:flex; gap:6px; margin-left:auto; }
+    .ptab {
+      padding:7px 20px; background:var(--surface2); border:1px solid var(--border);
+      border-radius:7px; font-size:12px; font-weight:700; color:var(--muted);
+      cursor:pointer; transition:all .18s;
+    }
+    .ptab:hover { border-color:var(--accent); color:var(--text); }
+    .ptab.on { background:var(--accent); border-color:var(--accent); color:#000; }
+
+    /* summary KPI row */
+    .an-kpi-row {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;
+    }
+    .an-kpi {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); padding:18px; text-align:center;
+    }
+    .an-kpi-val { font-size:32px; font-weight:800; font-family:var(--mono); line-height:1; margin-bottom:5px; }
+    .an-kpi-lbl { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+    .an-kpi-sub { font-size:10px; color:var(--muted); margin-top:3px; }
+
+    /* main chart grid */
+    .an-chart-grid {
+      display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px;
+    }
+    .an-chart-grid.three { grid-template-columns:1fr 1fr 1fr; }
+    .an-chart-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); padding:18px;
+    }
+    .an-chart-hdr {
+      display:flex; justify-content:space-between; align-items:center;
+      margin-bottom:14px;
+    }
+    .an-chart-title { font-size:13px; font-weight:700; }
+    .an-chart-badge {
+      font-size:10px; font-weight:700; padding:2px 9px; border-radius:9px;
+      font-family:var(--mono);
+    }
+    .badge-temp  { background:rgba(231,76,60,.15);  color:var(--red);    }
+    .badge-pres  { background:rgba(52,152,219,.15);  color:var(--blue);   }
+    .badge-hum   { background:rgba(46,204,113,.15);  color:var(--green);  }
+    .badge-anom  { background:rgba(230,126,34,.15);  color:var(--orange); }
+
+    /* anomaly type breakdown table */
+    .an-type-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+    .an-type-table th {
+      background:var(--surface2); padding:9px 12px; text-align:left;
+      font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase;
+      color:var(--muted); border-bottom:1px solid var(--border);
+    }
+    .an-type-table td {
+      padding:9px 12px; border-bottom:1px solid rgba(48,54,61,.4);
+      color:var(--muted); background:var(--surface);
+    }
+    .an-type-table tbody tr:last-child td { border-bottom:none; }
+    .an-type-table tbody tr:hover td { background:var(--surface2); }
+
+    /* mini bar inside table cell */
+    .tbl-bar-wrap { display:flex; align-items:center; gap:8px; }
+    .tbl-bar { height:5px; border-radius:3px; background:var(--accent); min-width:4px; }
+    .tbl-pct { font-family:var(--mono); font-size:11px; color:var(--text); font-weight:700; }
+
+    /* city comparison bar chart section */
+    .an-full-card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); padding:20px; margin-bottom:20px;
+    }
+    .an-full-title { font-size:14px; font-weight:700; margin-bottom:16px; }
+
+    /* loading state */
+    .an-loading {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      height:200px; gap:12px; color:var(--muted); font-size:13px;
+    }
+    .an-spinner {
+      width:32px; height:32px; border:3px solid var(--border);
+      border-top-color:var(--accent); border-radius:50%;
+      animation:spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    @media(max-width:900px) {
+      .an-kpi-row { grid-template-columns:repeat(2,1fr); }
+      .an-chart-grid, .an-chart-grid.three { grid-template-columns:1fr; }
+      .period-tabs { margin-left:0; }
+    }
+    @media(max-width:640px) {
+      .an-kpi-row { grid-template-columns:1fr 1fr; }
+      .picker-bar { flex-direction:column; align-items:flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="nav scrolled" id="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>⚡</span> SkyGuard <span style="color:var(--accent)">AI</span></a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="analysis.html" class="on">Analysis</a></li>
+      <li><a href="anomalies.html">Anomalies</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="usecases.html">Use Cases</a></li>
+      <li><a href="metrics.html">Metrics</a></li>
+      <li><a href="location.html">Live Location</a></li>
+    </ul>
+    <a href="dashboard.html" class="btn btn-primary btn-sm nav-cta">Live Demo</a>
+    <button class="burger" id="burger"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<div class="page-hero">
+  <div class="wrap page-hero-row">
+    <div>
+      <h1 class="page-title">City Weather Analysis</h1>
+      <p class="page-desc">Daily, weekly and monthly breakdown of temperature, pressure, humidity and anomaly events across all 20 Tamil Nadu AWS stations.</p>
+    </div>
+    <div class="an-hero-stat page-stat">
+      <span class="big" id="heroStatVal">20</span>
+      <small>Stations Analysed</small>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="wrap">
+
+    <!-- ── Picker bar ── -->
+    <div class="picker-bar fi">
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label>City / Station</label>
+        <select id="citySelect"></select>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:5px;margin-left:auto">
+        <label>Time Period</label>
+        <div class="period-tabs">
+          <button class="ptab on" data-period="day">Day</button>
+          <button class="ptab"    data-period="week">Week</button>
+          <button class="ptab"    data-period="month">Month</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KPI summary row ── -->
+    <div class="an-kpi-row fi" id="kpiRow">
+      <div class="an-kpi">
+        <div class="an-kpi-val" id="kvAvgTemp" style="color:var(--red)">—</div>
+        <div class="an-kpi-lbl">Avg Temperature</div>
+        <div class="an-kpi-sub" id="kvTempRange">—</div>
+      </div>
+      <div class="an-kpi">
+        <div class="an-kpi-val" id="kvAvgPres" style="color:var(--blue)">—</div>
+        <div class="an-kpi-lbl">Avg Pressure</div>
+        <div class="an-kpi-sub" id="kvPresRange">—</div>
+      </div>
+      <div class="an-kpi">
+        <div class="an-kpi-val" id="kvAvgHum"  style="color:var(--green)">—</div>
+        <div class="an-kpi-lbl">Avg Humidity</div>
+        <div class="an-kpi-sub" id="kvHumRange">—</div>
+      </div>
+      <div class="an-kpi" style="border-color:rgba(230,126,34,.3)">
+        <div class="an-kpi-val" id="kvAnoms" style="color:var(--orange)">—</div>
+        <div class="an-kpi-lbl">Anomalies</div>
+        <div class="an-kpi-sub" id="kvAnomsRate">—</div>
+      </div>
+    </div>
+
+    <!-- ── Time-series charts ── -->
+    <div class="an-chart-grid fi">
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">🌡 Temperature (°C)</span>
+          <span class="an-chart-badge badge-temp" id="badgeTemp">—</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="tempChart"></canvas></div>
+      </div>
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">🔵 Pressure (hPa)</span>
+          <span class="an-chart-badge badge-pres" id="badgePres">—</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="presChart"></canvas></div>
+      </div>
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">💧 Humidity (%)</span>
+          <span class="an-chart-badge badge-hum" id="badgeHum">—</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="humChart"></canvas></div>
+      </div>
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">⚠ Anomaly Confidence Score</span>
+          <span class="an-chart-badge badge-anom" id="badgeAnom">—</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="anomChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ── Anomaly type breakdown ── -->
+    <div class="an-chart-grid fi" style="grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px">
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">📊 Anomaly Type Breakdown</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="typeChart"></canvas></div>
+      </div>
+      <div class="an-chart-card">
+        <div class="an-chart-hdr">
+          <span class="an-chart-title">🚦 Severity Distribution</span>
+        </div>
+        <div style="height:220px;position:relative"><canvas id="sevChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ── Anomaly event table ── -->
+    <div class="an-full-card fi">
+      <div class="an-full-title">📋 Anomaly Events — <span id="tableTitle">—</span></div>
+      <div style="overflow-x:auto">
+        <table class="an-type-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Temperature</th>
+              <th>Pressure</th>
+              <th>Humidity</th>
+              <th>Type</th>
+              <th>Confidence</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody id="eventTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── All-city comparison ── -->
+    <div class="an-full-card fi">
+      <div class="an-full-title">🏙 All Cities — <span id="compareTitle">Temperature Comparison</span></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="ptab on"  id="cmpBtnTemp" onclick="SG.setCmpMetric('temp')">Temperature</button>
+        <button class="ptab"     id="cmpBtnPres" onclick="SG.setCmpMetric('pres')">Pressure</button>
+        <button class="ptab"     id="cmpBtnHum"  onclick="SG.setCmpMetric('hum')">Humidity</button>
+        <button class="ptab"     id="cmpBtnAnom" onclick="SG.setCmpMetric('anom')">Anomaly Rate</button>
+      </div>
+      <div style="height:300px;position:relative"><canvas id="cmpChart"></canvas></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+SG.initNav();
+SG.initFade();
+SG.initAnalysis();
+</script>
+</body>
+</html>

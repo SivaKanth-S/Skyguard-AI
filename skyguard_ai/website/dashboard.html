@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>SkyGuard AI — Live Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <!-- Leaflet map library -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLEg=" crossorigin=""></script>
+
+  <style>
+    /* ── Map panel ─────────────────────────────────────── */
+    .map-section{margin-bottom:20px}
+    .map-wrap{position:relative;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);background:var(--surface)}
+    #tnMap{width:100%;height:500px;display:block}
+
+    /* ── Map theme toggle ───────────────────────────────── */
+    .map-theme-btn{
+      position:absolute;top:12px;right:12px;z-index:1002;
+      display:flex;align-items:center;gap:7px;
+      padding:7px 14px;border-radius:20px;font-size:12px;font-weight:700;
+      cursor:pointer;border:1px solid var(--border);
+      background:rgba(13,17,23,.88);color:var(--text);
+      backdrop-filter:blur(10px);transition:all .2s;white-space:nowrap;
+    }
+    .map-theme-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* Google Maps info window reset */
+    .gm-style .gm-style-iw-c{padding:0!important;background:#161b22!important;border-radius:12px!important;box-shadow:0 4px 24px rgba(0,0,0,.7)!important;}
+    .gm-style .gm-style-iw-d{overflow:hidden!important;}
+    .gm-style .gm-style-iw-t::after{background:#161b22!important;}
+    .gm-ui-hover-effect{filter:invert(1)!important;}
+    .map-overlay{position:absolute;top:12px;left:12px;z-index:1001;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+    .map-title-pill{background:rgba(13,17,23,.88);border:1px solid var(--border);backdrop-filter:blur(10px);padding:7px 14px;border-radius:20px;font-size:12px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px}
+    .map-legend{background:rgba(13,17,23,.88);border:1px solid var(--border);backdrop-filter:blur(10px);padding:10px 14px;border-radius:10px;display:flex;flex-direction:column;gap:5px;pointer-events:auto}
+    .map-legend-row{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted)}
+    .ml-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+    .map-stats-bar{position:absolute;bottom:12px;left:12px;right:12px;z-index:1001;background:rgba(13,17,23,.88);border:1px solid var(--border);backdrop-filter:blur(10px);padding:10px 16px;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;pointer-events:none}
+    .msb-item{display:flex;flex-direction:column;gap:1px}
+    .msb-val{font-size:18px;font-weight:800;font-family:var(--mono);line-height:1}
+    .msb-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+
+    /* ── Info popup (right side of map) ────────────────── */
+    .map-info-popup{position:absolute;top:12px;right:12px;z-index:1002;background:rgba(13,17,23,.95);border:1px solid var(--border);backdrop-filter:blur(14px);padding:14px 16px;border-radius:12px;min-width:220px;display:none;max-width:240px}
+    .map-info-popup.show{display:block}
+    .mip-name{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+    .mip-rows{display:flex;flex-direction:column;gap:5px}
+    .mip-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px}
+    .mip-label{color:var(--muted)}
+    .mip-val{font-family:var(--mono);font-weight:700;font-size:12px}
+    .mip-sev{font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;letter-spacing:.5px}
+    /* delete button inside popup */
+    .mip-delete-btn{
+      display:flex;align-items:center;justify-content:center;gap:6px;
+      width:100%;margin-top:11px;padding:7px 0;
+      background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.3);
+      border-radius:7px;color:var(--red);font-size:11px;font-weight:700;
+      cursor:pointer;transition:all .2s;
+    }
+    .mip-delete-btn:hover{background:rgba(231,76,60,.22);border-color:var(--red);}
+    .mip-delete-btn[style*="display:none"]{display:none!important}
+
+    /* ── Add-mode toolbar (above map) ───────────────────── */
+    .map-toolbar{
+      display:flex;align-items:center;gap:10px;
+      padding:0 0 14px;flex-wrap:wrap;
+    }
+    .toolbar-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.9px;flex:1}
+    .btn-toggle-add{
+      display:inline-flex;align-items:center;gap:7px;
+      padding:8px 18px;background:var(--surface2);
+      border:1px solid var(--border);border-radius:8px;
+      font-size:13px;font-weight:700;color:var(--accent);
+      cursor:pointer;transition:all .2s;white-space:nowrap;
+    }
+    .btn-toggle-add:hover,.btn-toggle-add.active{background:rgba(88,166,255,.12);border-color:var(--accent);}
+    .btn-toggle-add.active{color:#fff;background:var(--accent);}
+    /* cursor crosshair while in add-mode */
+    #tnMap.add-mode{cursor:crosshair!important;}
+
+    /* ── Add-mode hint banner (inside map) ──────────────── */
+    .add-hint-banner{
+      position:absolute;top:12px;left:50%;transform:translateX(-50%);
+      z-index:1003;background:rgba(88,166,255,.92);
+      color:#000;font-size:12px;font-weight:700;
+      padding:8px 18px;border-radius:20px;
+      pointer-events:none;white-space:nowrap;
+      display:none;
+      box-shadow:0 4px 16px rgba(88,166,255,.4);
+    }
+    .add-hint-banner.show{display:block;}
+
+    /* ── Custom stations list (below map toolbar) ───────── */
+    .custom-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px;}
+    .custom-list:empty{display:none;}
+    .cst-item{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 14px;background:var(--surface);
+      border:1px solid var(--border);border-radius:9px;font-size:12px;
+      transition:border-color .2s;
+    }
+    .cst-item:hover{border-color:rgba(88,166,255,.35);}
+    .cst-dot{width:9px;height:9px;border-radius:50%;background:#58a6ff;flex-shrink:0;}
+    .cst-name{font-weight:700;flex:1;}
+    .cst-meta{font-family:var(--mono);font-size:10px;color:var(--muted);}
+    .cst-del{
+      background:none;border:none;color:var(--muted);cursor:pointer;
+      padding:3px 7px;border-radius:5px;font-size:13px;line-height:1;
+      transition:all .2s;
+    }
+    .cst-del:hover{background:rgba(231,76,60,.15);color:var(--red);}
+
+    /* ── Radius modal overlay ───────────────────────────── */
+    .radius-modal-overlay{
+      position:fixed;inset:0;z-index:99999;
+      background:rgba(0,0,0,.65);backdrop-filter:blur(4px);
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;pointer-events:none;transition:opacity .22s;
+    }
+    .radius-modal-overlay.show{opacity:1;pointer-events:auto;}
+    .radius-modal{
+      background:#161b22;border:1px solid var(--border);
+      border-radius:16px;padding:28px 32px;
+      width:340px;max-width:90vw;
+      box-shadow:0 20px 60px rgba(0,0,0,.7);
+      transform:scale(.94);transition:transform .22s;
+    }
+    .radius-modal-overlay.show .radius-modal{transform:scale(1);}
+    .rm-title{font-size:16px;font-weight:800;margin-bottom:4px;display:flex;align-items:center;gap:9px;}
+    .rm-sub{font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.55;}
+    .rm-coords{
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:7px;padding:8px 12px;margin-bottom:18px;
+      font-family:var(--mono);font-size:11px;color:var(--accent);
+      display:flex;align-items:center;gap:8px;
+    }
+    /* name field */
+    .rm-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+    .rm-field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;}
+    .rm-field input{
+      background:var(--surface2);border:1px solid var(--border);
+      color:var(--text);padding:9px 12px;border-radius:7px;
+      font-size:13px;font-family:var(--font);
+    }
+    .rm-field input:focus{outline:none;border-color:var(--accent);}
+    .rm-field input::placeholder{color:var(--muted);}
+    /* radius slider row */
+    .rm-radius-row{display:flex;align-items:center;gap:12px;margin-bottom:20px;}
+    .rm-radius-row label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;white-space:nowrap;}
+    .rm-radius-row input[type=range]{flex:1;accent-color:var(--accent);}
+    .rm-radius-val{font-family:var(--mono);font-size:14px;font-weight:800;color:var(--accent);min-width:52px;text-align:right;}
+    .rm-actions{display:flex;gap:10px;}
+    .rm-confirm{
+      flex:1;padding:10px;background:var(--accent);color:#000;
+      border:none;border-radius:8px;font-size:13px;font-weight:800;
+      cursor:pointer;transition:all .2s;
+    }
+    .rm-confirm:hover{background:#79b8ff;transform:translateY(-1px);}
+    .rm-cancel{
+      padding:10px 16px;background:transparent;color:var(--muted);
+      border:1px solid var(--border);border-radius:8px;font-size:13px;
+      cursor:pointer;transition:all .2s;
+    }
+    .rm-cancel:hover{border-color:var(--muted);color:var(--text);}
+
+    /* ── Toast ──────────────────────────────────────────── */
+    .sg-toast{
+      position:fixed;bottom:28px;right:28px;z-index:99998;
+      background:#161b22;border:1px solid var(--border);
+      padding:12px 18px;border-radius:10px;
+      font-size:13px;font-weight:600;color:var(--text);
+      box-shadow:0 6px 28px rgba(0,0,0,.6);
+      display:flex;align-items:center;gap:10px;
+      transform:translateY(20px);opacity:0;
+      transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;
+    }
+    .sg-toast.show{transform:translateY(0);opacity:1;}
+    .sg-toast-icon{font-size:17px;}
+    @keyframes mapPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.8}100%{transform:translate(-50%,-50%) scale(2.8);opacity:0}}
+  </style>
+</head>
+<body>
+
+<nav class="nav scrolled" id="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>⚡</span> SkyGuard <span style="color:var(--accent)">AI</span></a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="dashboard.html" class="on">Dashboard</a></li>
+      <li><a href="analysis.html">Analysis</a></li>
+      <li><a href="anomalies.html">Anomalies</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="usecases.html">Use Cases</a></li>
+      <li><a href="metrics.html">Metrics</a></li>
+      <li><a href="location.html">Live Location</a></li>
+    </ul>
+    <a href="dashboard.html" class="btn btn-primary btn-sm nav-cta">Live Demo</a>
+    <button class="burger" id="burger"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<div class="page-hero">
+  <div class="wrap page-hero-row">
+    <div>
+      <h1 class="page-title">Live Anomaly Monitor</h1>
+      <p class="page-desc">Tamil Nadu AWS network — 20 stations streaming live. Click any marker to select. Enable add-mode and tap the map to place a new station.</p>
+    </div>
+    <div class="live-pill"><span class="pulse"></span> STREAMING LIVE</div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="wrap">
+
+    <!-- ── MAP TOOLBAR ── -->
+    <div class="map-toolbar">
+      <button class="btn-toggle-add" id="toggleAddMode">
+        ＋ Add Station (tap map)
+      </button>
+    </div>
+
+    <!-- ── CUSTOM STATIONS LIST ── -->
+    <div class="custom-list" id="customList"></div>
+
+    <!-- ── MAP ── -->
+    <div class="map-section">
+      <div class="map-wrap">
+        <div id="tnMap"></div>
+
+        <!-- add-mode hint -->
+        <div class="add-hint-banner" id="addHintBanner">
+          📍 Click anywhere on the map to place a new station
+        </div>
+
+        <div class="map-overlay">
+          <div class="map-title-pill">
+            <span class="pulse"></span>
+            <span id="mapStationCount">Tamil Nadu AWS · 20 Stations</span>
+          </div>
+          <div class="map-legend">
+            <div class="map-legend-row"><span class="ml-dot" style="background:#2ecc71"></span>HEALTHY</div>
+            <div class="map-legend-row"><span class="ml-dot" style="background:#f39c12"></span>DEGRADED</div>
+            <div class="map-legend-row"><span class="ml-dot" style="background:#e67e22"></span>FAULT</div>
+            <div class="map-legend-row"><span class="ml-dot" style="background:#e74c3c"></span>CRITICAL</div>
+            <div class="map-legend-row" style="margin-top:4px;padding-top:5px;border-top:1px solid var(--border)">
+              <span class="ml-dot" style="background:#58a6ff"></span>Custom
+            </div>
+          </div>
+        </div>
+
+        <!-- info popup (offset so it doesn't overlap theme btn) -->
+        <div class="map-info-popup" id="mapInfoPopup" style="top:52px">
+          <div class="mip-name" id="mipName">—</div>
+          <div class="mip-rows">
+            <div class="mip-row"><span class="mip-label">🌡 Temperature</span><span class="mip-val" id="mipTemp">—</span></div>
+            <div class="mip-row"><span class="mip-label">🔵 Pressure</span>   <span class="mip-val" id="mipPres">—</span></div>
+            <div class="mip-row"><span class="mip-label">💧 Humidity</span>   <span class="mip-val" id="mipHum">—</span></div>
+            <div class="mip-row"><span class="mip-label">📊 Confidence</span> <span class="mip-val" id="mipConf">—</span></div>
+            <div class="mip-row"><span class="mip-label">📡 Coverage</span>   <span class="mip-val" id="mipCov">—</span></div>
+            <div class="mip-row"><span class="mip-label">🚦 Status</span>     <span class="mip-sev" id="mipSev">—</span></div>
+          </div>
+          <!-- only shown for custom stations -->
+          <button class="mip-delete-btn" id="mipDeleteBtn" style="display:none">
+            🗑 Delete This Station
+          </button>
+        </div>
+
+        <!-- Dark / Light theme toggle -->
+        <button class="map-theme-btn" id="tnMapThemeBtn" onclick="SG._tnMapToggleTheme && SG._tnMapToggleTheme()">🌙 Dark Map</button>
+
+        <div class="map-stats-bar">
+          <div class="msb-item"><span class="msb-val" id="mapTotal" style="color:var(--accent)">0</span><span class="msb-lbl">Readings</span></div>
+          <div class="msb-item"><span class="msb-val" id="mapAnom"  style="color:var(--orange)">0</span><span class="msb-lbl">Anomalies</span></div>
+          <div class="msb-item"><span class="msb-val" id="mapCrit"  style="color:var(--red)">0</span>   <span class="msb-lbl">Critical</span></div>
+          <div class="msb-item"><span class="msb-val" id="mapHealth">🟢</span>                          <span class="msb-lbl">Network Health</span></div>
+          <div class="msb-item" style="margin-left:auto">
+            <span class="msb-val" id="mapSelName" style="color:var(--text);font-size:13px">Click a marker</span>
+            <span class="msb-lbl">Selected Station</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Radius Modal ── -->
+    <div class="radius-modal-overlay" id="radiusModalOverlay">
+      <div class="radius-modal">
+        <div class="rm-title">📍 New AWS Station</div>
+        <p class="rm-sub">Set a name and coverage radius for the new station. A monitoring circle will be drawn around the location.</p>
+        <div class="rm-coords" id="rmCoords">📌 0.0000, 0.0000</div>
+
+        <div class="rm-field">
+          <label>Station Name</label>
+          <input type="text" id="rmName" placeholder="e.g. Villupuram — East Coast" maxlength="60"/>
+        </div>
+        <div class="rm-field">
+          <label>Short Label (shown on map)</label>
+          <input type="text" id="rmShort" placeholder="e.g. Villupuram" maxlength="20"/>
+        </div>
+
+        <div class="rm-radius-row">
+          <label>Coverage Radius</label>
+          <input type="range" id="rmRadius" min="5" max="100" value="25" step="5"/>
+          <span class="rm-radius-val" id="rmRadiusVal">25 km</span>
+        </div>
+
+        <div class="rm-actions">
+          <button class="rm-confirm" id="rmConfirm">📡 Add to Map</button>
+          <button class="rm-cancel"  id="rmCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="ctl-grp">
+        <label>Station</label>
+        <select id="stSel">
+          <option value="0">Chennai — Nungambakkam</option>
+          <option value="1">Madurai — Meenambakkam</option>
+          <option value="2">Coimbatore — Peelamedu</option>
+          <option value="3">Tiruchirappalli — Srirangam</option>
+          <option value="4">Salem — Fairlands</option>
+          <option value="5">Tirunelveli — Palayamkottai</option>
+          <option value="6">Vellore — Katpadi</option>
+          <option value="7">Erode — Surampatti</option>
+          <option value="8">Thoothukudi — Harbour</option>
+          <option value="9">Dindigul — Sirumalai</option>
+          <option value="10">Kancheepuram — Uthiramerur</option>
+          <option value="11">Thanjavur — Brahadeeswarar</option>
+          <option value="12">Nagapattinam — Coast</option>
+          <option value="13">Ooty — Nilgiris</option>
+          <option value="14">Rameshwaram — Island</option>
+          <option value="15">Cuddalore — Coastal</option>
+          <option value="16">Puducherry — Raj Nivas</option>
+          <option value="17">Hosur — Denkanikottai</option>
+          <option value="18">Karur — Pappireddipatti</option>
+          <option value="19">Virudhunagar</option>
+        </select>
+      </div>
+      <div class="ctl-grp">
+        <label>Inject Anomaly</label>
+        <select id="anSel">
+          <option value="none">None (Normal)</option>
+          <option value="spike_temp">Temperature Spike</option>
+          <option value="spike_pres">Pressure Spike</option>
+          <option value="frozen">Frozen Sensor</option>
+          <option value="oor">Out of Range</option>
+          <option value="multi">Multivariate Fault</option>
+          <option value="missing">Communication Loss</option>
+        </select>
+      </div>
+      <div class="ctl-grp">
+        <label>Speed</label>
+        <div class="speed-btns">
+          <button class="sp-btn on" data-ms="1000">1×</button>
+          <button class="sp-btn" data-ms="500">2×</button>
+          <button class="sp-btn" data-ms="200">5×</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="toggleBtn"><span id="toggleIcon">⏸</span> Pause</button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-val" id="kTotal">0</div><div class="kpi-lbl">Readings</div></div>
+      <div class="kpi a"><div class="kpi-val" id="kAnom">0</div><div class="kpi-lbl">Anomalies</div></div>
+      <div class="kpi c"><div class="kpi-val" id="kCrit">0</div><div class="kpi-lbl">Critical</div></div>
+      <div class="kpi h"><div class="kpi-val" id="kHealth">🟢</div><div class="kpi-lbl">Health</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="chart-card full">
+        <div class="chart-hdr">
+          <span>Sensor Time Series — Temperature · Pressure · Humidity</span>
+          <div class="leg">
+            <span class="dot" style="background:#e74c3c"></span>Temp
+            <span class="dot" style="background:#3498db"></span>Pressure
+            <span class="dot" style="background:#2ecc71"></span>Humidity
+          </div>
+        </div>
+        <div style="height:270px;position:relative"><canvas id="tsChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-hdr"><span>Anomaly Confidence Score</span></div>
+        <div style="height:220px;position:relative"><canvas id="confChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-hdr"><span>Severity Breakdown</span></div>
+        <div style="height:220px;position:relative"><canvas id="sevChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Station health + alert feed -->
+    <div class="bottom-row">
+      <div class="panel">
+        <h4>Station Health</h4>
+        <div class="st-list" id="stList"></div>
+      </div>
+      <div class="panel">
+        <h4>Alert Feed <span class="live-badge">LIVE</span></h4>
+        <div class="af" id="alertFeed"><div class="af-empty">No anomalies detected yet…</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="sg-toast" id="sgToast">
+  <span class="sg-toast-icon" id="sgToastIcon">✅</span>
+  <span id="sgToastMsg">Done.</span>
+</div>
+
+<script src="app.js"></script>
+<script>
+  SG.initNav();
+  SG.initDashboard();
+  SG.initTNMap();
+  SG.initAddStation();
+  SG.initFade();
+</script>
+</body>
+</html>
