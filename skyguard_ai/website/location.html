@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>SkyGuard AI — Live Location Tracker</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
-  <link rel="stylesheet" href="style.css"/>
+  <script>
+    (function(){const t=localStorage.getItem('skyguard_theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <link rel="stylesheet" href="style.css?v=4"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <!-- Leaflet map library -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
@@ -281,6 +284,10 @@
       <li><a href="metrics.html">Metrics</a></li>
       <li><a href="location.html" class="on">Live Location</a></li>
     </ul>
+    <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Theme" title="Toggle Dark / Light Theme" onclick="SG.toggleTheme && SG.toggleTheme()">
+      <span class="theme-icon" id="themeIcon">🌙</span>
+      <span class="theme-label" id="themeLabel">Dark</span>
+    </button>
     <a href="dashboard.html" class="btn btn-primary btn-sm nav-cta">Live Demo</a>
     <button class="burger" id="burger"><span></span><span></span><span></span></button>
   </div>
@@ -318,6 +325,21 @@
       <div class="tl-row"><span class="tl-dot" style="background:#58a6ff;border:2px solid #fff"></span> Custom station (added from dashboard)</div>
     </div>
 
+    <!-- Anomaly Injection Bar for Location Webpage -->
+    <div class="map-inject-bar fi">
+      <span class="inject-bar-title">⚡ Map Anomaly Injection Test:</span>
+      <select id="locAnSel" class="map-type-select" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:4px 8px;font-size:11px;">
+        <option value="none">Select Anomaly to Inject...</option>
+        <option value="spike_temp">🔥 Temperature Spike</option>
+        <option value="spike_pres">🌀 Pressure Spike</option>
+        <option value="frozen">❄️ Frozen Sensor</option>
+        <option value="oor">⚠️ Out of Range</option>
+        <option value="multi">⚡ Multivariate Fault</option>
+        <option value="missing">📡 Communication Loss</option>
+      </select>
+      <button id="locInjectBtn" class="btn-inject sm" title="Trigger relatable animation effect on location map">⚡ Inject Anomaly</button>
+    </div>
+
     <!-- Map -->
     <div class="loc-map-wrap fi">
       <!-- Acquiring overlay -->
@@ -337,16 +359,15 @@
 
       <div id="locMap"></div>
 
-      <!-- Map Type Selector & Compass Controls -->
+      <!-- Map Controls: Layer Selector + Compass -->
       <div class="map-controls-group">
-        <div class="map-select-box">
-          <span class="map-select-icon">🗺️</span>
-          <select id="locMapTypeSelect" class="map-type-select" onchange="SG.setLocMapStyle && SG.setLocMapStyle(this.value)">
-            <option value="dark" selected>🌙 Dark Cyber Map</option>
-            <option value="streets">🗺️ Road & Street Map</option>
-            <option value="satellite">🛰️ Digital Satellite Map</option>
-          </select>
+        <!-- Map Layer Selector (independent from UI theme) -->
+        <div class="map-theme-btn-group">
+          <button type="button" class="map-theme-toggle-btn active" id="locDarkBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('dark')" title="Cyber Dark Map Layer">🌙 Cyber</button>
+          <button type="button" class="map-theme-toggle-btn" id="locLightBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('streets')" title="Streets Map Layer">☀️ Streets</button>
+          <button type="button" class="map-theme-toggle-btn" id="locSatBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('satellite')" title="Satellite Map Layer">🛰️ Sat</button>
         </div>
+        <!-- Compass -->
         <button class="map-compass-btn" id="locCompassBtn" title="Compass: Click to reset orientation to North" onclick="SG.resetLocMapOrientation && SG.resetLocMapOrientation()">
           <svg class="compass-icon-svg" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="15" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.6"/>
@@ -431,7 +452,7 @@
   <span id="sgToastMsg">Location acquired.</span>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 <script>
   SG.initNav();
   SG.initFade();

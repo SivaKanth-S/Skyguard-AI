@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>SkyGuard AI — Performance Metrics</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
-  <link rel="stylesheet" href="style.css"/>
+  <script>
+    (function(){const t=localStorage.getItem('skyguard_theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <link rel="stylesheet" href="style.css?v=4"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -24,6 +27,10 @@
       <li><a href="metrics.html" class="on">Metrics</a></li>
       <li><a href="location.html">Live Location</a></li>
     </ul>
+    <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Theme" title="Toggle Dark / Light Theme" onclick="SG.toggleTheme && SG.toggleTheme()">
+      <span class="theme-icon" id="themeIcon">🌙</span>
+      <span class="theme-label" id="themeLabel">Dark</span>
+    </button>
     <a href="dashboard.html" class="btn btn-primary btn-sm nav-cta">Live Demo</a>
     <button class="burger" id="burger"><span></span><span></span><span></span></button>
   </div>
@@ -164,7 +171,7 @@
 
 
 
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 <script>SG.initNav(); SG.initFade(); SG.initMetricBars(); SG.initMetricsCharts();</script>
 </body>
 </html>

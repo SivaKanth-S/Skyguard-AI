@@ -8,11 +8,165 @@
 
 window.SG = {};
 
+// ── Theme System ─────────────────────────────────────────────
+SG.activeCharts = [];
+
+SG.getTheme = function () {
+  try {
+    return localStorage.getItem('skyguard_theme') || 'dark';
+  } catch (e) {
+    return 'dark';
+  }
+};
+
+/* ── Light theme token values (mirrors style.css [data-theme="light"]) ── */
+const LIGHT_TOKENS = {
+  '--bg':               '#f4f6fb',
+  '--surface':          '#ffffff',
+  '--surface2':         '#e9eef6',
+  '--border':           '#d0d7de',
+  '--text':             '#1f2328',
+  '--muted':            '#57606a',
+  '--accent':           '#0969da',
+  '--green':            '#1a7f37',
+  '--red':              '#cf222e',
+  '--orange':           '#d46b08',
+  '--yellow':           '#b58105',
+  '--purple':           '#8250df',
+  '--blue':             '#0969da',
+  '--shadow':           '0 4px 20px rgba(140,149,159,.18)',
+  '--grad':             'linear-gradient(135deg,#0969da,#1a7f37,#8250df)',
+  '--nav-bg':           'rgba(255,255,255,.94)',
+  '--map-overlay-bg':   'rgba(255,255,255,.94)',
+  '--map-overlay-text': '#1f2328',
+  '--card-hover-border':'rgba(9,105,218,.35)',
+  '--badge-bg-alpha':   '.15',
+  '--tooltip-bg':       '#ffffff',
+  '--select-bg':        '#f6f8fa',
+};
+
+SG.applyTheme = function (theme) {
+  const isLight = theme === 'light';
+  const root = document.documentElement;
+
+  // ① Set data-theme attribute (keeps CSS [data-theme] selectors in sync)
+  root.setAttribute('data-theme', isLight ? 'light' : 'dark');
+  if (document.body) document.body.classList.toggle('light-theme', isLight);
+
+  // ② DIRECTLY override CSS variables on the root element via JS
+  //    This works regardless of browser CSS caching — guaranteed full-page update.
+  if (isLight) {
+    Object.entries(LIGHT_TOKENS).forEach(([k, v]) => root.style.setProperty(k, v));
+  } else {
+    // Dark mode: remove inline overrides so :root CSS defaults take over
+    Object.keys(LIGHT_TOKENS).forEach(k => root.style.removeProperty(k));
+  }
+
+  // ③ Force body & key surfaces to repaint (belt-and-suspenders)
+  if (document.body) {
+    document.body.style.backgroundColor = isLight ? '#f4f6fb' : '#0d1117';
+    document.body.style.color           = isLight ? '#1f2328' : '#e6edf3';
+  }
+
+  // ④ Update navbar theme toggle buttons
+  document.querySelectorAll('#themeToggleBtn, .theme-toggle-btn').forEach(btn => {
+    const iconEl  = btn.querySelector('.theme-icon');
+    const labelEl = btn.querySelector('.theme-label');
+    if (iconEl)  iconEl.textContent  = isLight ? '☀️' : '🌙';
+    if (labelEl) labelEl.textContent = isLight ? 'Light' : 'Dark';
+    btn.setAttribute('aria-label', isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme');
+    btn.setAttribute('title',      isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme');
+  });
+
+  // ⑤ Update map-overlay floating theme buttons
+  document.querySelectorAll('.map-ui-theme-icon').forEach(el => { el.textContent = isLight ? '☀️' : '🌙'; });
+  document.querySelectorAll('.map-ui-theme-label').forEach(el => { el.textContent = isLight ? 'Light' : 'Dark'; });
+
+  // ⑥ Update Chart.js defaults + redraw all registered charts
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color       = isLight ? '#57606a' : '#8b949e';
+    Chart.defaults.borderColor = isLight ? '#d0d7de' : '#30363d';
+    if (Array.isArray(SG.activeCharts)) {
+      SG.activeCharts.forEach(ch => {
+        try {
+          if (!ch || typeof ch.update !== 'function') return;
+          // Update plugin colors
+          if (ch.options.plugins && ch.options.plugins.tooltip) {
+            Object.assign(ch.options.plugins.tooltip, {
+              backgroundColor: isLight ? '#ffffff' : '#1e2530',
+              borderColor:     isLight ? '#d0d7de' : '#30363d',
+              titleColor:      isLight ? '#1f2328' : '#e6edf3',
+              bodyColor:       isLight ? '#57606a' : '#8b949e',
+            });
+          }
+          // Update scale colors
+          if (ch.options.scales) {
+            Object.values(ch.options.scales).forEach(scale => {
+              if (scale.ticks) scale.ticks.color = isLight ? '#57606a' : '#8b949e';
+              if (scale.grid)  scale.grid.color  = isLight ? '#e1e4e8' : '#30363d';
+            });
+          }
+          // Update radar-specific scale
+          if (ch.options.scales && ch.options.scales.r) {
+            ch.options.scales.r.grid.color        = isLight ? '#d0d7de' : 'rgba(48,54,61,.8)';
+            ch.options.scales.r.angleLines.color  = isLight ? '#d0d7de' : 'rgba(48,54,61,.8)';
+            ch.options.scales.r.pointLabels.color = isLight ? '#57606a' : '#8b949e';
+          }
+          ch.update('none'); // 'none' = skip animation for instant repaint
+        } catch (err) { /* ignore unmounted chart errors */ }
+      });
+    }
+  }
+};
+
+SG.toggleTheme = function () {
+  const current = SG.getTheme();
+  const next = current === 'light' ? 'dark' : 'light';
+  try {
+    localStorage.setItem('skyguard_theme', next);
+  } catch (e) {}
+  SG.applyTheme(next);
+  return next;
+};
+
+SG.initTheme = function () {
+  // Apply saved theme immediately (CSS vars + body style)
+  SG.applyTheme(SG.getTheme());
+
+  // Bind click listeners to every theme toggle button in the page
+  function bindThemeBtns() {
+    document.querySelectorAll('#themeToggleBtn, .theme-toggle-btn').forEach(function(btn) {
+      if (!btn._themeListenerAttached) {
+        btn._themeListenerAttached = true;
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          SG.toggleTheme();
+        });
+        // Remove any inline onclick to prevent double-fire
+        btn.removeAttribute('onclick');
+      }
+    });
+  }
+
+  // Bind now (works when app.js is at bottom of body, DOM already ready)
+  bindThemeBtns();
+
+  // Also bind on DOMContentLoaded as a fallback (e.g. if script is in <head>)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindThemeBtns);
+  }
+};
+
+// Initialise immediately — app.js sits at end of <body> so DOM is ready
+SG.initTheme();
+
 // ── Chart.js defaults ────────────────────────────────────────
 if (typeof Chart !== 'undefined') {
-  Chart.defaults.color          = '#8b949e';
+  const isLight = SG.getTheme() === 'light';
+  Chart.defaults.color          = isLight ? '#57606a' : '#8b949e';
   Chart.defaults.font.family    = "'Inter', system-ui, sans-serif";
-  Chart.defaults.borderColor    = '#30363d';
+  Chart.defaults.borderColor    = isLight ? '#d0d7de' : '#30363d';
 }
 
 const C = {
@@ -57,6 +211,7 @@ const TN_STATIONS = [
    NAVBAR
    ============================================================ */
 SG.initNav = function () {
+  SG.initTheme();
   const nav = document.getElementById('nav');
   window.addEventListener('scroll', () =>
     nav?.classList.toggle('scrolled', window.scrollY > 30)
@@ -238,10 +393,18 @@ SG.initMiniCharts = function () {
    METRICS CHARTS (metrics page)
    ============================================================ */
 SG.initMetricsCharts = function () {
+  const isLight = SG.getTheme() === 'light';
+  const TTMetrics = { backgroundColor: isLight ? '#ffffff' : '#1e2530', borderColor: isLight ? '#d0d7de' : '#30363d', borderWidth: 1, titleColor: isLight ? '#1f2328' : '#e6edf3', bodyColor: isLight ? '#57606a' : '#8b949e' };
   const rCtx=document.getElementById('radarChart')?.getContext('2d');
-  if(rCtx) new Chart(rCtx,{type:'radar',data:{labels:['Accuracy','Precision','Recall','ROC-AUC','Real-Time','Explainability','Scalability','Energy'],datasets:[{label:'SkyGuard AI',data:[97,93,96,98,92,90,88,85],backgroundColor:'rgba(88,166,255,.13)',borderColor:C.accent,borderWidth:2,pointBackgroundColor:C.accent,pointRadius:4},{label:'Threshold Baseline',data:[72,65,78,70,95,45,70,90],backgroundColor:'rgba(230,126,34,.07)',borderColor:C.orange,borderWidth:1.5,pointBackgroundColor:C.orange,pointRadius:3,borderDash:[4,4]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:14,usePointStyle:true}},tooltip:TT},scales:{r:{min:0,max:100,ticks:{stepSize:20,display:false},grid:{color:'rgba(48,54,61,.8)'},angleLines:{color:'rgba(48,54,61,.8)'},pointLabels:{font:{size:10},color:'#8b949e'}}}}});
+  if(rCtx) {
+    const rc = new Chart(rCtx,{type:'radar',data:{labels:['Accuracy','Precision','Recall','ROC-AUC','Real-Time','Explainability','Scalability','Energy'],datasets:[{label:'SkyGuard AI',data:[97,93,96,98,92,90,88,85],backgroundColor:'rgba(88,166,255,.13)',borderColor:C.accent,borderWidth:2,pointBackgroundColor:C.accent,pointRadius:4},{label:'Threshold Baseline',data:[72,65,78,70,95,45,70,90],backgroundColor:'rgba(230,126,34,.07)',borderColor:C.orange,borderWidth:1.5,pointBackgroundColor:C.orange,pointRadius:3,borderDash:[4,4]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:14,usePointStyle:true}},tooltip:TTMetrics},scales:{r:{min:0,max:100,ticks:{stepSize:20,display:false},grid:{color:isLight?'#d0d7de':'rgba(48,54,61,.8)'},angleLines:{color:isLight?'#d0d7de':'rgba(48,54,61,.8)'},pointLabels:{font:{size:10},color:isLight?'#57606a':'#8b949e'}}}}});
+    SG.activeCharts.push(rc);
+  }
   const bCtx=document.getElementById('barChart')?.getContext('2d');
-  if(bCtx) new Chart(bCtx,{type:'bar',data:{labels:['Precision','Recall','F1','ROC-AUC','Accuracy'],datasets:[{label:'SkyGuard AI',data:[93,96,94,98,97],backgroundColor:[C.blue,C.green,C.red,C.purple,C.yellow],borderRadius:6,borderSkipped:false},{label:'Threshold Baseline',data:[65,78,71,70,72],backgroundColor:'rgba(139,148,158,.22)',borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:14,usePointStyle:true}},tooltip:{...TT,callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y}%`}}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{min:0,max:110,grid:{color:'#1e2530'},ticks:{callback:v=>v+'%',font:{size:11}}}}}});
+  if(bCtx) {
+    const bc = new Chart(bCtx,{type:'bar',data:{labels:['Precision','Recall','F1','ROC-AUC','Accuracy'],datasets:[{label:'SkyGuard AI',data:[93,96,94,98,97],backgroundColor:[C.blue,C.green,C.red,C.purple,C.yellow],borderRadius:6,borderSkipped:false},{label:'Threshold Baseline',data:[65,78,71,70,72],backgroundColor:'rgba(139,148,158,.22)',borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:14,usePointStyle:true}},tooltip:{...TTMetrics,callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y}%`}}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{min:0,max:110,grid:{color:isLight?'#e9eef6':'#1e2530'},ticks:{callback:v=>v+'%',font:{size:11}}}}}});
+    SG.activeCharts.push(bc);
+  }
 };
 
 /* ============================================================
@@ -267,54 +430,67 @@ SG.initDashboard = function () {
   let timer = null;
 
   /* ── build charts ── */
+  const isLight = SG.getTheme() === 'light';
+  const TTDash = { backgroundColor: isLight ? '#ffffff' : '#1e2530', borderColor: isLight ? '#d0d7de' : '#30363d', borderWidth: 1, titleColor: isLight ? '#1f2328' : '#e6edf3', bodyColor: isLight ? '#57606a' : '#8b949e' };
+  const gridDash = isLight ? '#e9eef6' : '#1e2530';
+
   const tsCtx = document.getElementById('tsChart')?.getContext('2d');
   let tsChart = null;
-  if (tsCtx) tsChart = new Chart(tsCtx, {
-    type:'line',
-    data:{labels:[],datasets:[
-      {label:'Temp °C',      data:[],borderColor:C.red,   backgroundColor:'rgba(231,76,60,.05)', fill:true, borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yT'},
-      {label:'Pressure hPa', data:[],borderColor:C.blue,  backgroundColor:'rgba(52,152,219,.04)',fill:false,borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yP'},
-      {label:'Humidity %',   data:[],borderColor:C.green, backgroundColor:'rgba(46,204,113,.04)',fill:false,borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yH'},
-      {label:'Anomaly',type:'scatter',data:[],pointRadius:7,pointStyle:'triangle',backgroundColor:[],borderColor:[],borderWidth:2,yAxisID:'yT',showLine:false},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
-      interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:false},tooltip:{...TT,callbacks:{label:c=>c.dataset.label==='Anomaly'?null:` ${c.dataset.label}: ${c.parsed.y?.toFixed(2)}`}}},
-      scales:{
-        x:{grid:{color:'#1e2530'},ticks:{maxTicksLimit:8,font:{size:10}}},
-        yT:{type:'linear',position:'left', grid:{color:'#1e2530'},ticks:{color:C.red,  font:{size:9},callback:v=>v+'°C'}},
-        yP:{type:'linear',position:'right',grid:{drawOnChartArea:false},ticks:{color:C.blue, font:{size:9},callback:v=>v+'hPa'}},
-        yH:{type:'linear',position:'right',grid:{drawOnChartArea:false},ticks:{color:C.green,font:{size:9},callback:v=>v+'%'},display:false},
+  if (tsCtx) {
+    tsChart = new Chart(tsCtx, {
+      type:'line',
+      data:{labels:[],datasets:[
+        {label:'Temp °C',      data:[],borderColor:C.red,   backgroundColor:'rgba(231,76,60,.05)', fill:true, borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yT'},
+        {label:'Pressure hPa', data:[],borderColor:C.blue,  backgroundColor:'rgba(52,152,219,.04)',fill:false,borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yP'},
+        {label:'Humidity %',   data:[],borderColor:C.green, backgroundColor:'rgba(46,204,113,.04)',fill:false,borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'yH'},
+        {label:'Anomaly',type:'scatter',data:[],pointRadius:7,pointStyle:'triangle',backgroundColor:[],borderColor:[],borderWidth:2,yAxisID:'yT',showLine:false},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{...TTDash,callbacks:{label:c=>c.dataset.label==='Anomaly'?null:` ${c.dataset.label}: ${c.parsed.y?.toFixed(2)}`}}},
+        scales:{
+          x:{grid:{color:gridDash},ticks:{maxTicksLimit:8,font:{size:10}}},
+          yT:{type:'linear',position:'left', grid:{color:gridDash},ticks:{color:C.red,  font:{size:9},callback:v=>v+'°C'}},
+          yP:{type:'linear',position:'right',grid:{drawOnChartArea:false},ticks:{color:C.blue, font:{size:9},callback:v=>v+'hPa'}},
+          yH:{type:'linear',position:'right',grid:{drawOnChartArea:false},ticks:{color:C.green,font:{size:9},callback:v=>v+'%'},display:false},
+        },
       },
-    },
-  });
+    });
+    SG.activeCharts.push(tsChart);
+  }
 
   const cfCtx = document.getElementById('confChart')?.getContext('2d');
   let cfChart = null;
-  if (cfCtx) cfChart = new Chart(cfCtx, {
-    type:'line',
-    data:{labels:[],datasets:[{label:'Confidence',data:[],borderColor:C.accent,backgroundColor:'rgba(88,166,255,.1)',fill:true,borderWidth:1.5,pointRadius:0,tension:.4}]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
-      plugins:{legend:{display:false},tooltip:TT,annotation:{annotations:{
-        c1:{type:'line',yMin:.85,yMax:.85,borderColor:C.red,   borderWidth:1,borderDash:[4,4]},
-        c2:{type:'line',yMin:.65,yMax:.65,borderColor:C.orange,borderWidth:1,borderDash:[4,4]},
-        c3:{type:'line',yMin:.45,yMax:.45,borderColor:C.yellow,borderWidth:1,borderDash:[4,4]},
-      }}},
-      scales:{
-        x:{grid:{color:'#1e2530'},ticks:{maxTicksLimit:6,font:{size:10}}},
-        y:{min:0,max:1,grid:{color:'#1e2530'},ticks:{callback:v=>(v*100).toFixed(0)+'%',font:{size:10}}},
+  if (cfCtx) {
+    cfChart = new Chart(cfCtx, {
+      type:'line',
+      data:{labels:[],datasets:[{label:'Confidence',data:[],borderColor:C.accent,backgroundColor:'rgba(88,166,255,.1)',fill:true,borderWidth:1.5,pointRadius:0,tension:.4}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
+        plugins:{legend:{display:false},tooltip:TTDash,annotation:{annotations:{
+          c1:{type:'line',yMin:.85,yMax:.85,borderColor:C.red,   borderWidth:1,borderDash:[4,4]},
+          c2:{type:'line',yMin:.65,yMax:.65,borderColor:C.orange,borderWidth:1,borderDash:[4,4]},
+          c3:{type:'line',yMin:.45,yMax:.45,borderColor:C.yellow,borderWidth:1,borderDash:[4,4]},
+        }}},
+        scales:{
+          x:{grid:{color:gridDash},ticks:{maxTicksLimit:6,font:{size:10}}},
+          y:{min:0,max:1,grid:{color:gridDash},ticks:{callback:v=>(v*100).toFixed(0)+'%',font:{size:10}}},
+        },
       },
-    },
-  });
+    });
+    SG.activeCharts.push(cfChart);
+  }
 
   const svCtx = document.getElementById('sevChart')?.getContext('2d');
   let svChart = null;
-  if (svCtx) svChart = new Chart(svCtx, {
-    type:'doughnut',
-    data:{labels:['CRITICAL','HIGH','MEDIUM','LOW'],datasets:[{data:[0,0,0,0],backgroundColor:[C.red,C.orange,C.yellow,C.blue],borderColor:'#161b22',borderWidth:3,hoverOffset:6}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
-      plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:12,usePointStyle:true}},tooltip:{...TT,callbacks:{label:c=>` ${c.label}: ${c.parsed}`}}}},
-  });
+  if (svCtx) {
+    svChart = new Chart(svCtx, {
+      type:'doughnut',
+      data:{labels:['CRITICAL','HIGH','MEDIUM','LOW'],datasets:[{data:[0,0,0,0],backgroundColor:[C.red,C.orange,C.yellow,C.blue],borderColor:isLight?'#ffffff':'#161b22',borderWidth:3,hoverOffset:6}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+        plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:12,usePointStyle:true}},tooltip:{...TTDash,callbacks:{label:c=>` ${c.label}: ${c.parsed}`}}}},
+    });
+    SG.activeCharts.push(svChart);
+  }
 
   /* ── helpers ── */
   const push = (a,v) => { a.push(v); if(a.length>MAX) a.shift(); };
@@ -459,7 +635,27 @@ SG.initDashboard = function () {
     }
     if (typeof SG._mapSelectStation === 'function') SG._mapSelectStation(newSi);
   });
-  document.getElementById('anSel')?.addEventListener('change', e => { state.atype = e.target.value; });
+  
+  const triggerDashInject = (atype) => {
+    state.atype = atype;
+    const st = TN_STATIONS[state.si] || (SG._customStationById ? SG._customStationById(state.si) : null) || { name: 'Station ' + state.si, lat: 10.85, lng: 78.65 };
+    if (atype !== 'none' && SG._tnMap) {
+      SG.triggerInjectAnimation(SG._tnMap, st.lat, st.lng, atype, st.name);
+    }
+    if (typeof tick === 'function') tick();
+  };
+
+  document.getElementById('anSel')?.addEventListener('change', e => {
+    triggerDashInject(e.target.value);
+  });
+
+  document.getElementById('injectBtn')?.addEventListener('click', () => {
+    const sel = document.getElementById('anSel');
+    if (sel) {
+      if (sel.value === 'none') sel.value = 'spike_temp';
+      triggerDashInject(sel.value);
+    }
+  });
 
   document.querySelectorAll('.sp-btn').forEach(b => {
     b.addEventListener('click', () => {
@@ -478,6 +674,109 @@ SG.initDashboard = function () {
 
   // Expose state for map to read
   SG._dashState = state;
+};
+
+/* ============================================================
+   RELATABLE INJECT ANOMALY MAP ANIMATION SYSTEM
+   ============================================================ */
+SG.triggerInjectAnimation = function(map, lat, lng, atype, stationName, customDetails) {
+  if (!map || typeof L === 'undefined') return;
+
+  const ANOMALY_META = {
+    spike_temp: { name: 'Temperature Spike', icon: '🌡️🔥', color: '#ff3b30', bgGlow: 'rgba(255, 59, 48, 0.45)', text: 'Thermal Heatwave Surge (+32.4°C jump)' },
+    spike_pres: { name: 'Pressure Spike', icon: '🌀⚡', color: '#00f2fe', bgGlow: 'rgba(0, 242, 254, 0.45)', text: 'Barometric Shockwave Surge (+54.8 hPa surge)' },
+    frozen:     { name: 'Frozen Sensor', icon: '❄️🔒', color: '#00d2ff', bgGlow: 'rgba(0, 210, 255, 0.45)', text: 'Telemetry Freeze Stagnation (Readings Locked)' },
+    oor:        { name: 'Out of Range', icon: '⚠️💥', color: '#ff0055', bgGlow: 'rgba(255, 0, 85, 0.45)', text: 'Physical Impossibility Breach (>65°C Limit)' },
+    multi:      { name: 'Multivariate Fault', icon: '⚡👾', color: '#f5af19', bgGlow: 'rgba(245, 175, 25, 0.45)', text: 'Cross-Sensor Biohazard Inconsistency' },
+    missing:    { name: 'Communication Loss', icon: '📡❌', color: '#ff416c', bgGlow: 'rgba(255, 65, 108, 0.45)', text: 'Station Telemetry Signal Disconnect (100% Drop)' },
+    none:       { name: 'Normal State', icon: '🟢✨', color: '#2ecc71', bgGlow: 'rgba(46, 204, 113, 0.45)', text: 'All Sensor Signals Nominal' }
+  };
+
+  const meta = ANOMALY_META[atype] || ANOMALY_META['spike_temp'];
+  if (atype === 'none') return;
+
+  // 1. Pan map to target location
+  if (lat != null && lng != null) {
+    map.panTo([lat, lng], { animate: true, duration: 0.6 });
+  }
+
+  // 2. Spawn Concentric Shockwave Rings + Cyber Reticle Snap Leaflet Overlay
+  if (lat != null && lng != null) {
+    const animHtml = `
+      <div class="sg-anomaly-anim-container" style="--an-color: ${meta.color}; --an-glow: ${meta.bgGlow}">
+        <div class="sg-shockwave-ring ring-1"></div>
+        <div class="sg-shockwave-ring ring-2"></div>
+        <div class="sg-shockwave-ring ring-3"></div>
+        <div class="sg-target-reticle">
+          <div class="reticle-corner tl"></div>
+          <div class="reticle-corner tr"></div>
+          <div class="reticle-corner bl"></div>
+          <div class="reticle-corner br"></div>
+          <div class="reticle-center-dot"></div>
+        </div>
+        <div class="sg-floating-anomaly-badge">
+          <span class="an-icon">${meta.icon}</span>
+          <div class="an-info">
+            <div class="an-title">${meta.name} Injected</div>
+            <div class="an-desc">${stationName || 'Target Station'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const animIcon = L.divIcon({
+      className: 'sg-anim-leaflet-wrapper',
+      html: animHtml,
+      iconSize: [200, 200],
+      iconAnchor: [100, 100]
+    });
+
+    const animMarker = L.marker([lat, lng], { icon: animIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
+
+    setTimeout(() => {
+      try { map.removeLayer(animMarker); } catch(e) {}
+    }, 4200);
+  }
+
+  // 3. Render Glassmorphic Map HUD Alert Banner inside the map wrap container
+  try {
+    const mapEl = map.getContainer();
+    const mapWrap = mapEl.closest('.map-wrap, .loc-map-wrap, .map-section') || mapEl.parentElement;
+    if (mapWrap) {
+      let hud = mapWrap.querySelector('.sg-map-hud-banner');
+      if (!hud) {
+        hud = document.createElement('div');
+        hud.className = 'sg-map-hud-banner';
+        mapWrap.appendChild(hud);
+      }
+
+      hud.style.borderColor = meta.color;
+      hud.style.boxShadow = `0 8px 32px ${meta.bgGlow}, inset 0 0 15px ${meta.bgGlow}`;
+      hud.innerHTML = `
+        <div class="hud-content">
+          <span class="hud-badge" style="background:${meta.color}">${meta.icon} ANOMALY INJECTED</span>
+          <div class="hud-text">
+            <strong>${stationName || 'Target Station'}: ${meta.name}</strong>
+            <span>${customDetails || meta.text}</span>
+          </div>
+        </div>
+        <button class="hud-close" onclick="this.parentElement.classList.remove('active')">&times;</button>
+      `;
+
+      // Animate banner entry
+      hud.classList.remove('active');
+      void hud.offsetWidth; // trigger reflow
+      hud.classList.add('active');
+
+      // Auto dismiss banner after 5.5 seconds
+      if (hud._dismissTimer) clearTimeout(hud._dismissTimer);
+      hud._dismissTimer = setTimeout(() => {
+        if (hud) hud.classList.remove('active');
+      }, 5500);
+    }
+  } catch(err) {
+    console.error("Map HUD Banner error:", err);
+  }
 };
 
 /* ============================================================
@@ -532,13 +831,15 @@ SG.initTNMap = function () {
 
   /* ── Map init ────────────────────────────────────────── */
   const map = L.map('tnMap', {
-    center: [10.85, 78.65], zoom: 7, minZoom: 6, maxZoom: 13,
-    zoomControl: false, attributionControl: true,
+    center: [10.85, 78.65], zoom: 7, minZoom: 5, maxZoom: 16,
+    zoomControl: false, attributionControl: false,
   });
   SG._tnMap = map; // expose for initFade invalidateSize
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-    subdomains: 'abcd', maxZoom: 19,
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    subdomains: ['a', 'b', 'c'],
+    className: 'dark-cyber-tile',
+    maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+    errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%230d1117"/></svg>',
   }).addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -875,19 +1176,24 @@ SG.initTNMap = function () {
 
   const MAP_STYLES = {
     dark: {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c'],
+      className: 'dark-cyber-tile',
+      maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%230d1117"/></svg>'
     },
     streets: {
-      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c'],
+      className: '',
+      maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23161b22"/></svg>'
     },
     satellite: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
-      maxZoom: 18
+      className: '',
+      maxNativeZoom: 18, maxZoom: 18, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23161b22"/></svg>'
     }
   };
 
@@ -897,6 +1203,18 @@ SG.initTNMap = function () {
     _tileRef = L.tileLayer(cfg.url, cfg).addTo(map);
     _tileRef.bringToBack();
   };
+
+  SG.setTNMapTheme = function (styleKey) {
+    SG.setTNMapStyle(styleKey);
+    ['tnDarkBtn', 'tnLightBtn', 'tnSatBtn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.classList.remove('active');
+    });
+    if (styleKey === 'dark') document.getElementById('tnDarkBtn')?.classList.add('active');
+    else if (styleKey === 'streets') document.getElementById('tnLightBtn')?.classList.add('active');
+    else if (styleKey === 'satellite') document.getElementById('tnSatBtn')?.classList.add('active');
+  };
+  SG.setTNMapLayer = SG.setTNMapTheme;
 
   SG.resetTNMapOrientation = function () {
     map.flyTo([10.85, 78.65], 7, { duration: 0.8 });
@@ -1333,20 +1651,27 @@ SG.initAnalysis = function () {
     const ctx = document.getElementById(id)?.getContext('2d');
     if (!ctx) return;
     charts[id] = new Chart(ctx, config);
+    SG.activeCharts.push(charts[id]);
   }
 
   /* ── Shared chart options helpers ────────────────────── */
-  const gridColor = '#1e2530';
-  const TT2 = { backgroundColor:'#1e2530', borderColor:'#30363d', borderWidth:1 };
+  function getGridColor() {
+    return SG.getTheme() === 'light' ? '#d0d7de' : '#1e2530';
+  }
+  function getTT2() {
+    const isLight = SG.getTheme() === 'light';
+    return { backgroundColor: isLight ? '#ffffff' : '#1e2530', borderColor: isLight ? '#d0d7de' : '#30363d', borderWidth: 1, titleColor: isLight ? '#1f2328' : '#e6edf3', bodyColor: isLight ? '#57606a' : '#8b949e' };
+  }
 
   function lineOpts(yLabel, color) {
+    const isLight = SG.getTheme() === 'light';
     return {
       responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
       interaction: { mode:'index', intersect:false },
-      plugins: { legend:{ display:false }, tooltip: TT2 },
+      plugins: { legend:{ display:false }, tooltip: getTT2() },
       scales: {
-        x: { grid:{ color:gridColor }, ticks:{ maxTicksLimit:8, font:{size:10}, color:'#6e7681' } },
-        y: { grid:{ color:gridColor }, ticks:{ color, font:{size:10}, callback: v => v + yLabel } },
+        x: { grid:{ color: getGridColor() }, ticks:{ maxTicksLimit:8, font:{size:10}, color: isLight ? '#57606a' : '#6e7681' } },
+        y: { grid:{ color: getGridColor() }, ticks:{ color, font:{size:10}, callback: v => v + yLabel } },
       },
     };
   }
@@ -1664,14 +1989,16 @@ SG.initLiveLocation = function () {
   const map = L.map('locMap', {
     center: [10.85, 78.65], zoom: 7,
     minZoom: 5, maxZoom: 16,
-    zoomControl: false, attributionControl: true,
+    zoomControl: false, attributionControl: false,
   });
   SG._locMap = map;
 
-  /* Dark tile layer (CartoDB Dark Matter) */
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-    subdomains: 'abcd', maxZoom: 19,
+  /* Dark tile layer (OpenStreetMap Dark Cyber) */
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    subdomains: ['a', 'b', 'c'],
+    className: 'dark-cyber-tile',
+    maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+    errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%230d1117"/></svg>',
   }).addTo(map);
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -2060,25 +2387,72 @@ SG.initLiveLocation = function () {
     if (userLat !== null) map.setView([userLat, userLng], 10, { animate:true });
   });
 
+  /* ── Wire up Location Page Anomaly Injection Bar ─────── */
+  const locAnSel = document.getElementById('locAnSel');
+  const locInjectBtn = document.getElementById('locInjectBtn');
+
+  const triggerLocInject = (atype) => {
+    if (!atype || atype === 'none') return;
+
+    // Target closest station to user position or default active station
+    let targetSt = allStations[0];
+    if (userLat !== null && userLng !== null) {
+      let minD = Infinity;
+      allStations.forEach(s => {
+        const d = Math.hypot(s.lat - userLat, s.lng - userLng);
+        if (d < minD) { minD = d; targetSt = s; }
+      });
+    }
+
+    const targetIdx = allStations.indexOf(targetSt);
+
+    if (targetIdx !== -1 && typeof stationConf !== 'undefined') {
+      stationConf[targetIdx] = atype === 'missing' ? 0.95 : atype === 'oor' ? 0.98 : 0.88;
+      refreshStationStyles();
+      refreshNearby();
+      assessThreats();
+    }
+
+    if (SG._locMap && targetSt) {
+      SG.triggerInjectAnimation(SG._locMap, targetSt.lat, targetSt.lng, atype, targetSt.name, "Simulated anomaly injected on live location map view.");
+    }
+  };
+
+  locAnSel?.addEventListener('change', e => {
+    triggerLocInject(e.target.value);
+  });
+
+  locInjectBtn?.addEventListener('click', () => {
+    if (locAnSel) {
+      if (locAnSel.value === 'none') locAnSel.value = 'spike_temp';
+      triggerLocInject(locAnSel.value);
+    }
+  });
+
   /* ── Multi-Style Tile Selector & Compass Control ─────── */
   let _locTileRef = null;
   map.eachLayer(l => { if (l instanceof L.TileLayer) _locTileRef = l; });
 
   const LOC_MAP_STYLES = {
     dark: {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c'],
+      className: 'dark-cyber-tile',
+      maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%230d1117"/></svg>'
     },
     streets: {
-      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      subdomains: 'abcd', maxZoom: 19
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c'],
+      className: '',
+      maxNativeZoom: 19, maxZoom: 19, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23161b22"/></svg>'
     },
     satellite: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
-      maxZoom: 18
+      className: '',
+      maxNativeZoom: 18, maxZoom: 18, minZoom: 4,
+      errorTileUrl: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23161b22"/></svg>'
     }
   };
 
@@ -2088,6 +2462,18 @@ SG.initLiveLocation = function () {
     _locTileRef = L.tileLayer(cfg.url, cfg).addTo(map);
     _locTileRef.bringToBack();
   };
+
+  SG.setLocMapTheme = function (styleKey) {
+    SG.setLocMapStyle(styleKey);
+    ['locDarkBtn', 'locLightBtn', 'locSatBtn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.classList.remove('active');
+    });
+    if (styleKey === 'dark') document.getElementById('locDarkBtn')?.classList.add('active');
+    else if (styleKey === 'streets') document.getElementById('locLightBtn')?.classList.add('active');
+    else if (styleKey === 'satellite') document.getElementById('locSatBtn')?.classList.add('active');
+  };
+  SG.setLocMapLayer = SG.setLocMapTheme;
 
   SG.resetLocMapOrientation = function () {
     if (userLat !== null) {

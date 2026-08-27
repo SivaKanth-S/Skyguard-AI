@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>SkyGuard AI — Live Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
-  <link rel="stylesheet" href="style.css"/>
+  <script>
+    (function(){const t=localStorage.getItem('skyguard_theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <link rel="stylesheet" href="style.css?v=4"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
@@ -199,6 +202,10 @@
       <li><a href="metrics.html">Metrics</a></li>
       <li><a href="location.html">Live Location</a></li>
     </ul>
+    <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Theme" title="Toggle Dark / Light Theme" onclick="SG.toggleTheme && SG.toggleTheme()">
+      <span class="theme-icon" id="themeIcon">🌙</span>
+      <span class="theme-label" id="themeLabel">Dark</span>
+    </button>
     <a href="dashboard.html" class="btn btn-primary btn-sm nav-cta">Live Demo</a>
     <button class="burger" id="burger"><span></span><span></span><span></span></button>
   </div>
@@ -253,7 +260,7 @@
           </div>
         </div>
 
-        <!-- info popup (offset so it doesn't overlap theme btn) -->
+        <!-- info popup (offset so it doesn't overlap layer btn) -->
         <div class="map-info-popup" id="mapInfoPopup" style="top:52px">
           <div class="mip-name" id="mipName">—</div>
           <div class="mip-rows">
@@ -270,16 +277,15 @@
           </button>
         </div>
 
-        <!-- Map Type Selector & Compass Controls -->
+        <!-- Map Controls: Layer Selector + Compass -->
         <div class="map-controls-group">
-          <div class="map-select-box">
-            <span class="map-select-icon">🗺️</span>
-            <select id="tnMapTypeSelect" class="map-type-select" onchange="SG.setTNMapStyle && SG.setTNMapStyle(this.value)">
-              <option value="dark" selected>🌙 Dark Cyber Map</option>
-              <option value="streets">🗺️ Road & Street Map</option>
-              <option value="satellite">🛰️ Digital Satellite Map</option>
-            </select>
+          <!-- Map Layer Selector (independent from UI theme) -->
+          <div class="map-theme-btn-group">
+            <button type="button" class="map-theme-toggle-btn active" id="tnDarkBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('dark')" title="Cyber Dark Map Layer">🌙 Cyber</button>
+            <button type="button" class="map-theme-toggle-btn" id="tnLightBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('streets')" title="Streets Map Layer">☀️ Streets</button>
+            <button type="button" class="map-theme-toggle-btn" id="tnSatBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('satellite')" title="Satellite Map Layer">🛰️ Sat</button>
           </div>
+          <!-- Compass -->
           <button class="map-compass-btn" id="tnCompassBtn" title="Compass: Click to reset orientation to North" onclick="SG.resetTNMapOrientation && SG.resetTNMapOrientation()">
             <svg class="compass-icon-svg" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="18" cy="18" r="15" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.6"/>
@@ -362,15 +368,18 @@
       </div>
       <div class="ctl-grp">
         <label>Inject Anomaly</label>
-        <select id="anSel">
-          <option value="none">None (Normal)</option>
-          <option value="spike_temp">Temperature Spike</option>
-          <option value="spike_pres">Pressure Spike</option>
-          <option value="frozen">Frozen Sensor</option>
-          <option value="oor">Out of Range</option>
-          <option value="multi">Multivariate Fault</option>
-          <option value="missing">Communication Loss</option>
-        </select>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="anSel">
+            <option value="none">None (Normal)</option>
+            <option value="spike_temp">🔥 Temperature Spike</option>
+            <option value="spike_pres">🌀 Pressure Spike</option>
+            <option value="frozen">❄️ Frozen Sensor</option>
+            <option value="oor">⚠️ Out of Range</option>
+            <option value="multi">⚡ Multivariate Fault</option>
+            <option value="missing">📡 Communication Loss</option>
+          </select>
+          <button class="btn-inject" id="injectBtn" title="Trigger relatable animation effect on map">⚡ Inject</button>
+        </div>
       </div>
       <div class="ctl-grp">
         <label>Speed</label>
@@ -435,7 +444,7 @@
   <span id="sgToastMsg">Done.</span>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 <script>
   SG.initNav();
   SG.initDashboard();
