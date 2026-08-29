@@ -366,21 +366,7 @@
           <option value="19">Virudhunagar</option>
         </select>
       </div>
-      <div class="ctl-grp">
-        <label>Inject Anomaly</label>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <select id="anSel">
-            <option value="none">None (Normal)</option>
-            <option value="spike_temp">🔥 Temperature Spike</option>
-            <option value="spike_pres">🌀 Pressure Spike</option>
-            <option value="frozen">❄️ Frozen Sensor</option>
-            <option value="oor">⚠️ Out of Range</option>
-            <option value="multi">⚡ Multivariate Fault</option>
-            <option value="missing">📡 Communication Loss</option>
-          </select>
-          <button class="btn-inject" id="injectBtn" title="Trigger relatable animation effect on map">⚡ Inject</button>
-        </div>
-      </div>
+      <!-- Anomaly injection is now fully automatic — driven by live sensor readings -->
       <div class="ctl-grp">
         <label>Speed</label>
         <div class="speed-btns">

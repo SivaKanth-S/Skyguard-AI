@@ -325,20 +325,7 @@
       <div class="tl-row"><span class="tl-dot" style="background:#58a6ff;border:2px solid #fff"></span> Custom station (added from dashboard)</div>
     </div>
 
-    <!-- Anomaly Injection Bar for Location Webpage -->
-    <div class="map-inject-bar fi">
-      <span class="inject-bar-title">⚡ Map Anomaly Injection Test:</span>
-      <select id="locAnSel" class="map-type-select" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:4px 8px;font-size:11px;">
-        <option value="none">Select Anomaly to Inject...</option>
-        <option value="spike_temp">🔥 Temperature Spike</option>
-        <option value="spike_pres">🌀 Pressure Spike</option>
-        <option value="frozen">❄️ Frozen Sensor</option>
-        <option value="oor">⚠️ Out of Range</option>
-        <option value="multi">⚡ Multivariate Fault</option>
-        <option value="missing">📡 Communication Loss</option>
-      </select>
-      <button id="locInjectBtn" class="btn-inject sm" title="Trigger relatable animation effect on location map">⚡ Inject Anomaly</button>
-    </div>
+    <!-- Anomaly injection is now fully automatic — driven by live sensor readings -->
 
     <!-- Map -->
     <div class="loc-map-wrap fi">

@@ -589,11 +589,89 @@ SG.initDashboard = function () {
     while (feed.children.length > 14) feed.removeChild(feed.lastChild);
   }
 
+  /* ── AUTO ANOMALY DETECTION HELPERS ──────────────────────── */
+  /* Cooldown map: stationIdx → timestamp of last auto-triggered animation.
+     Prevents flooding the map with animations on consecutive ticks.       */
+  const _autoAnimCooldown = {};
+  const AUTO_ANIM_INTERVAL_MS = 12000; // minimum 12 s between auto-animations per station
+
+  /* Detect whether the given reading + recent history breaches a critical
+     physical threshold. Returns an anomaly type string or null.          */
+  function autoDetectAnom(si, r) {
+    const hx          = getHist(si);
+    const recentTemps = hx.t.slice(-18);
+
+    // Missing: all sensors null
+    if (r.t == null && r.p == null && r.h == null) return 'missing';
+
+    // Physical impossibility — temperature way out of range
+    if (r.t != null && r.t > 60) return 'oor';
+
+    // Pressure spike
+    if (r.p != null && r.p > 1084) return 'spike_pres';
+
+    // Multivariate: all three sensors simultaneously extreme
+    if (r.t != null && r.t > 50 && r.h != null && r.h > 90 && r.p != null && r.p > 1050) return 'multi';
+
+    // Temperature spike: sudden jump vs last reading
+    if (r.t != null && recentTemps.length >= 2) {
+      const prev = recentTemps[recentTemps.length - 1];
+      if (prev != null && Math.abs(r.t - prev) > 10) return 'spike_temp';
+    }
+
+    // Frozen sensor: temperature completely flat over last 18 readings
+    if (recentTemps.length >= 18 && recentTemps.every(v => v != null)) {
+      const mean = recentTemps.reduce((a, b) => a + b, 0) / recentTemps.length;
+      const variance = recentTemps.reduce((s, v) => s + (v - mean) ** 2, 0) / recentTemps.length;
+      if (Math.sqrt(variance) < 0.05) return 'frozen';
+    }
+
+    return null;
+  }
+
   function tick() {
     const si = state.si;
     /* Guard: skip if this station was removed */
     if (state.sts[si]?.removed) return;
     const r  = gen();
+
+    /* ── AUTO CRITICAL ANOMALY DETECTION ──────────────────
+       Only fires when user has NOT manually set an anomaly type.
+       Checks all sensor values against physical thresholds and
+       injects animation + raises confidence to CRITICAL range.  */
+    if (state.atype === 'none') {
+      const autoType = autoDetectAnom(si, r);
+      if (autoType) {
+        // Override confidence into CRITICAL range
+        r.s   = 0.88 + Math.random() * 0.10;
+        r.sev = 'CRITICAL';
+        r.a   = autoType;
+
+        // Throttle animation per station to avoid spam
+        const now     = Date.now();
+        const lastAnim = _autoAnimCooldown[si] || 0;
+        if (now - lastAnim > AUTO_ANIM_INTERVAL_MS) {
+          _autoAnimCooldown[si] = now;
+          const st = TN_STATIONS[si] || (SG._customStationById ? SG._customStationById(si) : null);
+          if (st) {
+            // Fire on dashboard map
+            if (SG._tnMap) {
+              SG.triggerInjectAnimation(SG._tnMap, st.lat, st.lng, autoType, st.name);
+            }
+            // Mirror to location map if it's open
+            if (SG._locMap) {
+              SG.triggerInjectAnimation(SG._locMap, st.lat, st.lng, autoType, st.name);
+            }
+          }
+          // Instant marker update — bypass ratio delay by calling applyStyle directly
+          if (typeof SG._applyStationStyle === 'function') {
+            SG._applyStationStyle(si, '#e74c3c', si === state.si, true);
+          }
+        }
+      }
+    }
+    /* ─────────────────────────────────────────────────────── */
+
     const hx = getHist(si);
     push(hx.t, r.t); push(hx.p, r.p); push(hx.h, r.h); push(hx.s, r.s); push(hx.lb, r.lb);
     state.total++; state.sts[si].total++;
@@ -636,27 +714,6 @@ SG.initDashboard = function () {
     if (typeof SG._mapSelectStation === 'function') SG._mapSelectStation(newSi);
   });
   
-  const triggerDashInject = (atype) => {
-    state.atype = atype;
-    const st = TN_STATIONS[state.si] || (SG._customStationById ? SG._customStationById(state.si) : null) || { name: 'Station ' + state.si, lat: 10.85, lng: 78.65 };
-    if (atype !== 'none' && SG._tnMap) {
-      SG.triggerInjectAnimation(SG._tnMap, st.lat, st.lng, atype, st.name);
-    }
-    if (typeof tick === 'function') tick();
-  };
-
-  document.getElementById('anSel')?.addEventListener('change', e => {
-    triggerDashInject(e.target.value);
-  });
-
-  document.getElementById('injectBtn')?.addEventListener('click', () => {
-    const sel = document.getElementById('anSel');
-    if (sel) {
-      if (sel.value === 'none') sel.value = 'spike_temp';
-      triggerDashInject(sel.value);
-    }
-  });
-
   document.querySelectorAll('.sp-btn').forEach(b => {
     b.addEventListener('click', () => {
       document.querySelectorAll('.sp-btn').forEach(x => x.classList.remove('on'));
@@ -674,6 +731,103 @@ SG.initDashboard = function () {
 
   // Expose state for map to read
   SG._dashState = state;
+
+  /* ── BACKGROUND MONITOR: scan ALL stations every 8 s ────────
+     The main tick() only processes the selected station.
+     This loop generates a reading for every station silently,
+     detects critical anomalies, and fires the map animation +
+     updates state.sts[] so the map markers stay live for all
+     stations — not just the currently selected one.            */
+  (function startBgMonitor() {
+    const BG_INTERVAL_MS    = 8000;   // check all stations every 8 s
+    const BG_ANIM_COOLDOWN  = 20000;  // min gap between bg animations per station
+    const bgAnimLast = {};            // stationIdx → last animation timestamp
+
+    function bgTick() {
+      TN_STATIONS.forEach((stDef, i) => {
+        // Skip the currently selected station — tick() already handles it
+        if (i === state.si) return;
+        if (state.sts[i]?.removed) return;
+
+        // Simulate a reading for this background station
+        const st = state.sts[i];
+        const b  = stDef;
+        let t = b.t + (Math.random() - .5) * .8;
+        let p = b.p + (Math.random() - .5) * .4;
+        let h = b.h + (Math.random() - .5) * 2;
+        let s = .05 + Math.random() * .1;
+
+        // Auto-detect anomaly using same threshold logic as tick()
+        let autoType = null;
+        const hx          = getHist(i);
+        const recentTemps = hx.t.slice(-18);
+
+        if (t == null && p == null && h == null) {
+          autoType = 'missing';
+        } else if (t > 60) {
+          autoType = 'oor';
+        } else if (p > 1084) {
+          autoType = 'spike_pres';
+        } else if (t > 50 && h > 90 && p > 1050) {
+          autoType = 'multi';
+        } else if (recentTemps.length >= 2) {
+          const prev = recentTemps[recentTemps.length - 1];
+          if (prev != null && Math.abs(t - prev) > 10) autoType = 'spike_temp';
+        } else if (recentTemps.length >= 18 && recentTemps.every(v => v != null)) {
+          const mean = recentTemps.reduce((a, b) => a + b, 0) / recentTemps.length;
+          const variance = recentTemps.reduce((sv, v) => sv + (v - mean) ** 2, 0) / recentTemps.length;
+          if (Math.sqrt(variance) < 0.05) autoType = 'frozen';
+        }
+
+        if (autoType) {
+          s = 0.88 + Math.random() * 0.10;
+        }
+
+        // Push into background station's history
+        push(hx.t, t); push(hx.p, p); push(hx.h, h); push(hx.s, s); push(hx.lb, new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+
+        // Update state.sts[i] so map markers reflect live values
+        const sev = s >= .85 ? 'CRITICAL' : s >= .65 ? 'HIGH' : s >= .45 ? 'MEDIUM' : s >= .25 ? 'LOW' : 'NORMAL';
+        state.sts[i].t    = t;
+        state.sts[i].p    = p;
+        state.sts[i].h    = h;
+        state.sts[i].conf = s;
+        state.sts[i].sev  = sev;
+        if (sev !== 'NORMAL') {
+          state.sts[i].anoms = (state.sts[i].anoms || 0) + 1;
+          state.sts[i].total = (state.sts[i].total || 0) + 1;
+        } else {
+          state.sts[i].total = (state.sts[i].total || 0) + 1;
+        }
+
+        // Fire animation for critical auto-detections (with cooldown)
+        if (autoType && sev === 'CRITICAL') {
+          const now     = Date.now();
+          const lastAnim = bgAnimLast[i] || 0;
+          if (now - lastAnim > BG_ANIM_COOLDOWN) {
+            bgAnimLast[i] = now;
+            if (SG._tnMap) {
+              SG.triggerInjectAnimation(SG._tnMap, stDef.lat, stDef.lng, autoType, stDef.name);
+            }
+            if (SG._locMap) {
+              SG.triggerInjectAnimation(SG._locMap, stDef.lat, stDef.lng, autoType, stDef.name);
+            }
+            // Instant marker colour update
+            if (typeof SG._applyStationStyle === 'function') {
+              SG._applyStationStyle(i, '#e74c3c', false, true);
+            }
+          }
+        }
+      });
+
+      // Push updated sts[] to the map so all station dots repaint
+      if (typeof SG._mapUpdateMarkers === 'function') {
+        SG._mapUpdateMarkers(state.sts);
+      }
+    }
+
+    setInterval(bgTick, BG_INTERVAL_MS);
+  })();
 };
 
 /* ============================================================
@@ -1078,6 +1232,11 @@ SG.initTNMap = function () {
 
     refreshMarkers(ds ? ds.sts : null);
   }
+
+  /* ── Expose applyStyle so bg monitor + tick() can do instant updates ── */
+  SG._applyStationStyle = function (i, col, selected, anomalous) {
+    if (i < stations.length) applyStyle(i, col, selected, anomalous);
+  };
 
   /* ── Dashboard tick hooks ────────────────────────────── */
   SG._mapUpdateMarkers = function (sts) {
@@ -1976,9 +2135,18 @@ SG.initLiveLocation = function () {
 
   function driftConf() {
     stationConf.forEach((_, i) => {
-      stationConf[i] = Math.max(0, Math.min(1,
-        stationConf[i] + (Math.random() - 0.5) * 0.06
-      ));
+      // If the dashboard has live sensor data for this station, use its
+      // confidence value directly so threat levels are sensor-driven.
+      const dashConf = SG._dashState?.sts[i]?.conf;
+      if (dashConf != null && dashConf > 0) {
+        // Blend dashboard confidence in (smooth transition, not hard-snap)
+        stationConf[i] = stationConf[i] * 0.3 + dashConf * 0.7;
+      } else {
+        // Fallback: gentle random walk for stations with no dashboard data
+        stationConf[i] = Math.max(0, Math.min(1,
+          stationConf[i] + (Math.random() - 0.5) * 0.06
+        ));
+      }
     });
     refreshStationStyles();
     refreshNearby();
@@ -2258,6 +2426,22 @@ SG.initLiveLocation = function () {
         if (t.sev === 'CRITICAL' || t.sev === 'HIGH') {
           showToast(`⚠️ ${t.sev} zone: ${t.short} — ${t.dist.toFixed(1)} km away`, '🚨');
         }
+        if (t.sev === 'CRITICAL') {
+          // Derive the most likely anomaly type from the station's sensor values
+          // so the animation matches the actual cause (temp spike, OOR, etc.)
+          const stIdx = allStations.indexOf(allStations.find(s => s.id === t.id));
+          let inferredType = 'spike_temp'; // sensible default
+          const dashSt = SG._dashState?.sts[t.id];
+          if (dashSt) {
+            if (dashSt.t == null && dashSt.p == null && dashSt.h == null)   inferredType = 'missing';
+            else if (dashSt.t != null && dashSt.t > 60)                     inferredType = 'oor';
+            else if (dashSt.p != null && dashSt.p > 1084)                   inferredType = 'spike_pres';
+            else if (dashSt.t > 50 && dashSt.h > 90 && dashSt.p > 1050)    inferredType = 'multi';
+            else if (dashSt.t != null && dashSt.t > 40)                     inferredType = 'spike_temp';
+          }
+          SG.triggerInjectAnimation(SG._locMap, t.lat, t.lng, inferredType, t.name,
+            `Critical anomaly detected at ${t.name}`);
+        }
       }
     });
     /* Cleared threats → raise CLEAR alert */
@@ -2309,6 +2493,7 @@ SG.initLiveLocation = function () {
     userLng = lng;
 
     setUserPosition(lat, lng, accuracy);
+    map.setView([lat, lng], 12);
 
     /* Update coordinate bar */
     if (lcbLat) lcbLat.textContent = lat.toFixed(5);
@@ -2385,48 +2570,6 @@ SG.initLiveLocation = function () {
   stopBtn?.addEventListener('click',   stopTracking);
   centerBtn?.addEventListener('click', () => {
     if (userLat !== null) map.setView([userLat, userLng], 10, { animate:true });
-  });
-
-  /* ── Wire up Location Page Anomaly Injection Bar ─────── */
-  const locAnSel = document.getElementById('locAnSel');
-  const locInjectBtn = document.getElementById('locInjectBtn');
-
-  const triggerLocInject = (atype) => {
-    if (!atype || atype === 'none') return;
-
-    // Target closest station to user position or default active station
-    let targetSt = allStations[0];
-    if (userLat !== null && userLng !== null) {
-      let minD = Infinity;
-      allStations.forEach(s => {
-        const d = Math.hypot(s.lat - userLat, s.lng - userLng);
-        if (d < minD) { minD = d; targetSt = s; }
-      });
-    }
-
-    const targetIdx = allStations.indexOf(targetSt);
-
-    if (targetIdx !== -1 && typeof stationConf !== 'undefined') {
-      stationConf[targetIdx] = atype === 'missing' ? 0.95 : atype === 'oor' ? 0.98 : 0.88;
-      refreshStationStyles();
-      refreshNearby();
-      assessThreats();
-    }
-
-    if (SG._locMap && targetSt) {
-      SG.triggerInjectAnimation(SG._locMap, targetSt.lat, targetSt.lng, atype, targetSt.name, "Simulated anomaly injected on live location map view.");
-    }
-  };
-
-  locAnSel?.addEventListener('change', e => {
-    triggerLocInject(e.target.value);
-  });
-
-  locInjectBtn?.addEventListener('click', () => {
-    if (locAnSel) {
-      if (locAnSel.value === 'none') locAnSel.value = 'spike_temp';
-      triggerLocInject(locAnSel.value);
-    }
   });
 
   /* ── Multi-Style Tile Selector & Compass Control ─────── */
