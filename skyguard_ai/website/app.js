@@ -408,6 +408,89 @@ SG.initMetricsCharts = function () {
 };
 
 /* ============================================================
+   OPEN-METEO REAL WEATHER CACHE
+   Fetches actual current weather for every TN_STATIONS entry
+   using the free, no-key Open-Meteo API.
+   Cache is refreshed every 10 minutes.
+   ============================================================ */
+(function initWeatherCache() {
+  /* Per-station cache: idx → { t, p, h, fetchedAt, windspeed, weathercode } */
+  SG._wxCache    = {};
+  SG._wxReady    = false;   // true once at least one fetch completes
+  SG._wxFetching = false;
+
+  const REFRESH_MS = 10 * 60 * 1000; // 10 minutes
+
+  /* Build a single batched Open-Meteo call for all 20 stations.
+     Open-Meteo supports multiple lat/lon pairs in one request.   */
+  async function fetchAll() {
+    if (SG._wxFetching) return;
+    SG._wxFetching = true;
+
+    /* Show "Fetching…" on all source pills while request is in flight */
+    document.querySelectorAll('#wxSourcePill, .wx-source-pill').forEach(pill => {
+      pill.textContent = '🔄 Fetching…';
+      pill.style.color = 'var(--muted)';
+    });
+
+    try {
+      const lats = TN_STATIONS.map(s => s.lat).join(',');
+      const lngs = TN_STATIONS.map(s => s.lng).join(',');
+      const url  = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}` +
+                   `&current=temperature_2m,surface_pressure,relative_humidity_2m,wind_speed_10m,weather_code` +
+                   `&wind_speed_unit=kmh&timezone=Asia%2FKolkata&forecast_days=1`;
+
+      const res  = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+
+      /* Open-Meteo returns an array when multiple coordinates are given */
+      const results = Array.isArray(json) ? json : [json];
+      results.forEach((data, i) => {
+        const c = data.current;
+        if (!c) return;
+        SG._wxCache[i] = {
+          t           : c.temperature_2m          ?? TN_STATIONS[i].t,
+          p           : c.surface_pressure         ?? TN_STATIONS[i].p,
+          h           : c.relative_humidity_2m     ?? TN_STATIONS[i].h,
+          windspeed   : c.wind_speed_10m           ?? 0,
+          weathercode : c.weather_code             ?? 0,
+          fetchedAt   : Date.now(),
+        };
+        /* Sync base values in TN_STATIONS so bgTick always has fresh normals */
+        TN_STATIONS[i].t = SG._wxCache[i].t;
+        TN_STATIONS[i].p = SG._wxCache[i].p;
+        TN_STATIONS[i].h = SG._wxCache[i].h;
+      });
+
+      SG._wxReady = true;
+      const now = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+      /* Update every wxSourcePill on the page (dashboard + location can coexist) */
+      document.querySelectorAll('#wxSourcePill, .wx-source-pill').forEach(pill => {
+        pill.textContent = `🌐 Open-Meteo · Updated ${now}`;
+        pill.style.color = 'var(--green)';
+      });
+      console.log('[SkyGuard] Open-Meteo weather refreshed at', now);
+    } catch (err) {
+      console.warn('[SkyGuard] Open-Meteo fetch failed — using last cached / base values.', err.message);
+      document.querySelectorAll('#wxSourcePill, .wx-source-pill').forEach(pill => {
+        pill.textContent = '⚠️ Weather API unavailable';
+        pill.style.color = 'var(--orange)';
+      });
+    } finally {
+      SG._wxFetching = false;
+    }
+  }
+
+  /* Fetch immediately on load, then every 10 minutes */
+  fetchAll();
+  setInterval(fetchAll, REFRESH_MS);
+
+  /* Expose for manual refresh */
+  SG.refreshWeather = fetchAll;
+})();
+
+/* ============================================================
    LIVE DASHBOARD  (15-station Tamil Nadu network)
    ============================================================ */
 SG.initDashboard = function () {
@@ -496,15 +579,21 @@ SG.initDashboard = function () {
   const push = (a,v) => { a.push(v); if(a.length>MAX) a.shift(); };
 
   function gen() {
-    const st = state.sts[state.si];
-    /* Use TN_STATIONS base values if available, otherwise fall back to state values */
-    const b  = TN_STATIONS[state.si] || { t: st.t||32, p: st.p||1007, h: st.h||70 };
-    let t = b.t + (Math.random()-.5)*.8;
-    let p = b.p + (Math.random()-.5)*.4;
-    let h = b.h + (Math.random()-.5)*2;
-    let s = .05 + Math.random()*.1;
-    const a = state.atype;
+    const st  = state.sts[state.si];
+    /* ── Pull from Open-Meteo cache if available, else fall back to TN_STATIONS base ── */
+    const wx  = SG._wxCache[state.si];
+    const b   = wx
+      ? { t: wx.t, p: wx.p, h: wx.h }
+      : (TN_STATIONS[state.si] || { t: st.t||32, p: st.p||1007, h: st.h||70 });
 
+    /* Tiny sensor noise (+/- 0.3°C, 0.2 hPa, 1% RH) — simulates telemetry jitter */
+    let t = b.t + (Math.random() - .5) * 0.6;
+    let p = b.p + (Math.random() - .5) * 0.4;
+    let h = Math.max(0, Math.min(100, b.h + (Math.random() - .5) * 1.5));
+    let s = .05 + Math.random() * .08;   // baseline confidence 5–13%
+    const a = state.atype;               // always 'none' now (manual inject removed)
+
+    /* Anomaly type overrides kept for the auto-detect pipeline's use */
     if (a==='spike_temp') { t+=22+Math.random()*14; s=.88+Math.random()*.1; }
     if (a==='spike_pres') { p+=44+Math.random()*20; s=.82+Math.random()*.1; }
     if (a==='frozen')     { t=b.t;                   s=.55+Math.random()*.15; }
@@ -514,7 +603,8 @@ SG.initDashboard = function () {
 
     const sev = s>=.85?'CRITICAL':s>=.65?'HIGH':s>=.45?'MEDIUM':s>=.25?'LOW':'NORMAL';
     const lb  = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    return { t, p, h, s, sev, lb, a };
+    return { t, p, h, s, sev, lb, a,
+             source: wx ? 'live' : 'base' };  // track data origin
   }
 
   function updCharts() {
@@ -662,6 +752,8 @@ SG.initDashboard = function () {
             if (SG._locMap) {
               SG.triggerInjectAnimation(SG._locMap, st.lat, st.lng, autoType, st.name);
             }
+            // Auto-switch dashboard to this station + show critical banner
+            SG.autoSelectStation(si, autoType, st.name);
           }
           // Instant marker update — bypass ratio delay by calling applyStyle directly
           if (typeof SG._applyStationStyle === 'function') {
@@ -712,6 +804,23 @@ SG.initDashboard = function () {
       }
     }
     if (typeof SG._mapSelectStation === 'function') SG._mapSelectStation(newSi);
+    /* Sync pill button active state when select changes programmatically */
+    document.querySelectorAll('#stPillGroup .st-pill-btn').forEach(b => {
+      b.classList.toggle('active', +b.dataset.val === newSi);
+    });
+  });
+
+  /* ── Station pill buttons ── */
+  document.querySelectorAll('#stPillGroup .st-pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.val;
+      /* Update hidden select and fire change (runs all KPI reset / map logic above) */
+      const sel = document.getElementById('stSel');
+      if (sel && sel.value !== val) {
+        sel.value = val;
+        sel.dispatchEvent(new Event('change'));
+      }
+    });
   });
   
   document.querySelectorAll('.sp-btn').forEach(b => {
@@ -749,13 +858,13 @@ SG.initDashboard = function () {
         if (i === state.si) return;
         if (state.sts[i]?.removed) return;
 
-        // Simulate a reading for this background station
-        const st = state.sts[i];
-        const b  = stDef;
-        let t = b.t + (Math.random() - .5) * .8;
-        let p = b.p + (Math.random() - .5) * .4;
-        let h = b.h + (Math.random() - .5) * 2;
-        let s = .05 + Math.random() * .1;
+        /* ── Use Open-Meteo cached values if available ── */
+        const wx = SG._wxCache[i];
+        const b  = wx ? { t: wx.t, p: wx.p, h: wx.h } : stDef;
+        let t = b.t + (Math.random() - .5) * 0.6;
+        let p = b.p + (Math.random() - .5) * 0.4;
+        let h = Math.max(0, Math.min(100, b.h + (Math.random() - .5) * 1.5));
+        let s = .05 + Math.random() * .08;
 
         // Auto-detect anomaly using same threshold logic as tick()
         let autoType = null;
@@ -812,6 +921,8 @@ SG.initDashboard = function () {
             if (SG._locMap) {
               SG.triggerInjectAnimation(SG._locMap, stDef.lat, stDef.lng, autoType, stDef.name);
             }
+            // Auto-switch dashboard to this station + show critical banner
+            SG.autoSelectStation(i, autoType, stDef.name);
             // Instant marker colour update
             if (typeof SG._applyStationStyle === 'function') {
               SG._applyStationStyle(i, '#e74c3c', false, true);
@@ -828,6 +939,111 @@ SG.initDashboard = function () {
 
     setInterval(bgTick, BG_INTERVAL_MS);
   })();
+};
+
+/* ============================================================
+   AUTO STATION SELECT ON CRITICAL
+   Called from any page when a CRITICAL anomaly is detected.
+   Switches the dashboard to the affected station — updates the
+   dropdown, fires the change event, zooms the map, and shows
+   a persistent "critical takeover" banner on the dashboard.
+   ============================================================ */
+SG.autoSelectStation = function (stationId, anomType, stationName) {
+  const id = Number(stationId);
+  if (isNaN(id)) return;
+
+  /* ── 1. Switch the dashboard station selector ─────────── */
+  const stSel = document.getElementById('stSel');
+  if (stSel && String(stSel.value) !== String(id)) {
+    stSel.value = String(id);
+    stSel.dispatchEvent(new Event('change')); // triggers full KPI + chart reset + pill sync
+  }
+  /* Scroll the active pill into view when auto-switched */
+  const activePill = document.querySelector(`#stPillGroup .st-pill-btn[data-val="${id}"]`);
+  if (activePill) activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
+  /* ── 2. Zoom + checkmark on the map ───────────────────── */
+  if (typeof SG._mapSelectStation === 'function') {
+    SG._mapSelectStation(id);
+  }
+
+  /* ── 3. Flash the station dot red instantly ───────────── */
+  if (typeof SG._applyStationStyle === 'function') {
+    SG._applyStationStyle(id, '#e74c3c', true, true);
+  }
+
+  /* ── 4. Show CRITICAL takeover banner ────────────────── */
+  const ANOMALY_LABELS = {
+    spike_temp : '🌡️🔥 Temperature Spike',
+    spike_pres : '🌀⚡ Pressure Spike',
+    frozen     : '❄️🔒 Frozen Sensor',
+    oor        : '⚠️💥 Out of Range',
+    multi      : '⚡👾 Multivariate Fault',
+    missing    : '📡❌ Communication Loss',
+  };
+  const label = ANOMALY_LABELS[anomType] || '🚨 Critical Anomaly';
+  const name  = stationName || `Station ${id}`;
+
+  /* Inject keyframe style once */
+  if (!document.getElementById('sgCriticalBannerStyle')) {
+    const s = document.createElement('style');
+    s.id = 'sgCriticalBannerStyle';
+    s.textContent = `
+      @keyframes sg-critical-drop {
+        0%   { opacity:0; transform:translateX(-50%) translateY(-20px) scale(.93); }
+        100% { opacity:1; transform:translateX(-50%) translateY(0)      scale(1);  }
+      }
+      @keyframes sg-critical-ring {
+        0%   { transform:scale(1);   opacity:.8; }
+        100% { transform:scale(2.4); opacity:0;  }
+      }
+      .sg-crit-ring {
+        width:10px; height:10px; border-radius:50%; background:#fff;
+        position:relative; flex-shrink:0;
+      }
+      .sg-crit-ring::after {
+        content:''; position:absolute; inset:-4px; border-radius:50%;
+        border:2px solid rgba(255,255,255,.75);
+        animation:sg-critical-ring 1.2s ease-out infinite;
+      }
+      #sgCriticalBanner {
+        position:fixed; top:70px; left:50%; transform:translateX(-50%);
+        z-index:99997; display:flex; align-items:center; gap:12px;
+        background:rgba(231,76,60,.97); color:#fff;
+        padding:11px 22px 11px 16px; border-radius:12px;
+        box-shadow:0 6px 32px rgba(231,76,60,.55);
+        font-family:Inter,sans-serif; font-size:13px; font-weight:700;
+        max-width:90vw; pointer-events:auto;
+        animation:sg-critical-drop .4s cubic-bezier(.34,1.56,.64,1) both;
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  /* Remove old banner and create fresh (replays animation) */
+  document.getElementById('sgCriticalBanner')?.remove();
+  const banner = document.createElement('div');
+  banner.id = 'sgCriticalBanner';
+  banner.innerHTML = `
+    <div class="sg-crit-ring"></div>
+    <div style="line-height:1.45">
+      <div style="font-size:10px;opacity:.82;font-weight:600;letter-spacing:.6px;margin-bottom:2px">
+        ⚡ CRITICAL — AUTO-SWITCHED TO STATION
+      </div>
+      <div>${label} · <span style="opacity:.92">${name}</span></div>
+    </div>
+    <button onclick="document.getElementById('sgCriticalBanner')?.remove()"
+      style="margin-left:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);
+             color:#fff;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:13px;font-weight:700">✕</button>
+  `;
+  document.body.appendChild(banner);
+
+  /* Auto-dismiss after 8 s */
+  clearTimeout(SG._critBannerTimer);
+  SG._critBannerTimer = setTimeout(() => {
+    const el = document.getElementById('sgCriticalBanner');
+    if (el) { el.style.transition = 'opacity .5s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 520); }
+  }, 8000);
 };
 
 /* ============================================================
@@ -932,6 +1148,30 @@ SG.triggerInjectAnimation = function(map, lat, lng, atype, stationName, customDe
     console.error("Map HUD Banner error:", err);
   }
 };
+
+/* ============================================================
+   MAP LAYER DROPDOWN HELPERS
+   Single-button dropdown that replaces the 3-pill layer selector.
+   ============================================================ */
+SG._toggleLayerDropdown = function (dropdownId) {
+  const el = document.getElementById(dropdownId);
+  if (!el) return;
+  const isOpen = el.classList.contains('open');
+  /* Close all open dropdowns first */
+  document.querySelectorAll('.map-layer-dropdown.open').forEach(d => d.classList.remove('open'));
+  if (!isOpen) el.classList.add('open');
+};
+
+SG._closeLayerDropdown = function (dropdownId) {
+  document.getElementById(dropdownId)?.classList.remove('open');
+};
+
+/* Close on outside click */
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.map-layer-dropdown')) {
+    document.querySelectorAll('.map-layer-dropdown.open').forEach(d => d.classList.remove('open'));
+  }
+});
 
 /* ============================================================
    MAP READY CALLBACKS & HELPERS (Leaflet / OpenStreetMap)
@@ -1365,13 +1605,16 @@ SG.initTNMap = function () {
 
   SG.setTNMapTheme = function (styleKey) {
     SG.setTNMapStyle(styleKey);
-    ['tnDarkBtn', 'tnLightBtn', 'tnSatBtn'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.classList.remove('active');
+    const LABELS = { dark: { icon: '🌙', label: 'Cyber' }, streets: { icon: '☀️', label: 'Streets' }, satellite: { icon: '🛰️', label: 'Satellite' } };
+    const meta = LABELS[styleKey] || LABELS.dark;
+    const iconEl  = document.getElementById('tnLayerIcon');
+    const labelEl = document.getElementById('tnLayerLabel');
+    if (iconEl)  iconEl.textContent  = meta.icon;
+    if (labelEl) labelEl.textContent = meta.label;
+    /* sync active state on menu options */
+    document.querySelectorAll('#tnLayerMenu .map-layer-option').forEach(o => {
+      o.classList.toggle('active', o.dataset.key === styleKey);
     });
-    if (styleKey === 'dark') document.getElementById('tnDarkBtn')?.classList.add('active');
-    else if (styleKey === 'streets') document.getElementById('tnLightBtn')?.classList.add('active');
-    else if (styleKey === 'satellite') document.getElementById('tnSatBtn')?.classList.add('active');
   };
   SG.setTNMapLayer = SG.setTNMapTheme;
 
@@ -1449,6 +1692,9 @@ SG.initAddStation = function () {
         opt.value = String(station.id);
         opt.textContent = station.name;
         stSel?.appendChild(opt);
+
+        /* Add pill button to station selector group */
+        addPillBtn(station.id, station.short);
 
         /* Add to dash state */
         if (SG._dashState) {
@@ -1538,6 +1784,30 @@ SG.initAddStation = function () {
   rmCancel?.addEventListener('click', closeModal);
   overlay?.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
 
+  /* ── Station pill helpers ───────────────────────────── */
+  function addPillBtn(id, short) {
+    const group = document.getElementById('stPillGroup');
+    if (!group) return;
+    /* Don't add a duplicate */
+    if (group.querySelector(`[data-val="${id}"]`)) return;
+    const btn = document.createElement('button');
+    btn.className    = 'st-pill-btn';
+    btn.dataset.val  = String(id);
+    btn.textContent  = `📡 ${short}`;
+    btn.addEventListener('click', () => {
+      const sel = document.getElementById('stSel');
+      if (sel && sel.value !== String(id)) {
+        sel.value = String(id);
+        sel.dispatchEvent(new Event('change'));
+      }
+    });
+    group.appendChild(btn);
+  }
+
+  function removePillBtn(id) {
+    document.querySelector(`#stPillGroup .st-pill-btn[data-val="${id}"]`)?.remove();
+  }
+
   /* ── Confirm — add station ───────────────────────────── */
   rmConfirm?.addEventListener('click', () => {
     if (!pendingCoord) return;
@@ -1575,6 +1845,9 @@ SG.initAddStation = function () {
     opt.value = String(newId);
     opt.textContent = name;
     stSel?.appendChild(opt);
+
+    /* add pill button to station selector group */
+    addPillBtn(newId, short);
 
     /* add to dash state */
     if (SG._dashState) {
@@ -1620,6 +1893,9 @@ SG.initAddStation = function () {
 
     /* remove from dropdown */
     stSel?.querySelector(`option[value="${st.id}"]`)?.remove();
+
+    /* remove pill button */
+    removePillBtn(st.id);
 
     /* mark in dash state */
     if (SG._dashState?.sts[st.id]) {
@@ -1669,6 +1945,7 @@ SG.initAddStation = function () {
 
     if (typeof SG._mapRemoveCustomStation === 'function') SG._mapRemoveCustomStation(id);
     stSel?.querySelector(`option[value="${id}"]`)?.remove();
+    removePillBtn(id);
     if (SG._dashState?.sts[id]) {
       SG._dashState.sts[id] = { name:'—', short:'—', total:0, anoms:0, sev:'NORMAL', t:0,p:0,h:0,conf:0, removed:true };
     }
@@ -2116,7 +2393,18 @@ SG.initLiveLocation = function () {
   /* ── Simulated live anomaly confidence per station ──────
      Uses a deterministic pseudo-random that slowly drifts
      so each station's "threat level" changes over time.   */
-  const stationConf = TN_STATIONS.map(() => Math.random() * 0.2);
+  /* Seed initial confidence from Open-Meteo cache if already fetched,
+     otherwise start low (0–0.15). driftConf() will converge to real values. */
+  const stationConf = TN_STATIONS.map((st, i) => {
+    const wx = SG._wxCache ? SG._wxCache[i] : null;
+    if (wx) {
+      const tDev = Math.abs(wx.t - st.t) / 15;
+      const hDev = Math.abs(wx.h - st.h) / 30;
+      const pDev = Math.abs(wx.p - st.p) / 20;
+      return Math.min(0.75, 0.04 + tDev * 0.4 + hDev * 0.3 + pDev * 0.3);
+    }
+    return Math.random() * 0.15;
+  });
   let confDriftTimer = null;
 
   /* ── Load custom stations saved from dashboard ───────── */
@@ -2130,23 +2418,42 @@ SG.initLiveLocation = function () {
   /* Combined list: built-in + custom */
   const allStations = [...TN_STATIONS, ...customStations];
 
-  /* Pad stationConf for custom stations */
-  customStations.forEach(() => stationConf.push(Math.random() * 0.2));
+  /* Pad stationConf for custom stations (start low — no wx cache entry for them) */
+  customStations.forEach(() => stationConf.push(Math.random() * 0.1));
 
   function driftConf() {
     stationConf.forEach((_, i) => {
-      // If the dashboard has live sensor data for this station, use its
-      // confidence value directly so threat levels are sensor-driven.
+      const st = allStations[i];
+
+      /* Priority 1 — dashboard has live anomaly-scored conf for this station */
       const dashConf = SG._dashState?.sts[i]?.conf;
       if (dashConf != null && dashConf > 0) {
-        // Blend dashboard confidence in (smooth transition, not hard-snap)
+        /* Smooth 70/30 blend: avoids hard jumps when dashboard ticks fast */
         stationConf[i] = stationConf[i] * 0.3 + dashConf * 0.7;
-      } else {
-        // Fallback: gentle random walk for stations with no dashboard data
-        stationConf[i] = Math.max(0, Math.min(1,
-          stationConf[i] + (Math.random() - 0.5) * 0.06
-        ));
+        return;
       }
+
+      /* Priority 2 — Open-Meteo cache has real weather for this station.
+         Derive a physics-based confidence score from the actual values:
+         high humidity + high temp + extreme pressure → higher threat conf. */
+      const wx = SG._wxCache ? SG._wxCache[i] : null;
+      if (wx) {
+        const tBase  = st ? st.t : 32;
+        const hBase  = st ? st.h : 70;
+        const pBase  = st ? st.p : 1008;
+        /* Normalised deviations from station climatological norms */
+        const tDev   = Math.abs(wx.t - tBase) / 15;   // 15°C = "large" dev
+        const hDev   = Math.abs(wx.h - hBase) / 30;   // 30% RH = "large" dev
+        const pDev   = Math.abs(wx.p - pBase) / 20;   // 20 hPa = "large" dev
+        const wxConf = Math.min(0.80, 0.04 + tDev * 0.4 + hDev * 0.3 + pDev * 0.3);
+        stationConf[i] = stationConf[i] * 0.4 + wxConf * 0.6;
+        return;
+      }
+
+      /* Priority 3 — no external data: gentle random walk */
+      stationConf[i] = Math.max(0, Math.min(1,
+        stationConf[i] + (Math.random() - 0.5) * 0.06
+      ));
     });
     refreshStationStyles();
     refreshNearby();
@@ -2266,32 +2573,43 @@ SG.initLiveLocation = function () {
   const userIcon = L.divIcon({
     className : '',
     html      : '<div class="user-loc-icon tracking"></div>',
-    iconSize  : [18, 18],
-    iconAnchor: [9, 9],
+    iconSize  : [20, 20],
+    iconAnchor: [10, 10],
   });
 
-  let userMarker   = null;
+  let userMarker     = null;
   let accuracyCircle = null;
+  let hasFirstFix    = false;   // track if we've ever had a GPS fix
 
   function setUserPosition(lat, lng, acc) {
     if (!userMarker) {
+      /* First fix — create the marker */
       userMarker = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
       userMarker.bindTooltip('📍 Your Location', {
         direction: 'top', permanent: false, className: 'sg-tt', offset: [0, -12]
       });
     } else {
+      /* Subsequent fixes — slide marker smoothly, no re-zoom */
       userMarker.setLatLng([lat, lng]);
     }
+
     if (!accuracyCircle) {
       accuracyCircle = L.circle([lat, lng], {
-        radius      : acc,
+        radius      : Math.max(acc, 10),
         color       : '#58a6ff', fillColor: '#58a6ff',
-        fillOpacity : 0.08, weight: 1.5, opacity: 0.5,
+        fillOpacity : 0.07, weight: 1.5, opacity: 0.45,
         dashArray   : '4 4', interactive: false,
       }).addTo(map);
     } else {
       accuracyCircle.setLatLng([lat, lng]);
-      accuracyCircle.setRadius(acc);
+      accuracyCircle.setRadius(Math.max(acc, 10));
+    }
+
+    /* Only fly to the user's location on the very first fix.
+       After that let the user freely pan/zoom without interruption. */
+    if (!hasFirstFix) {
+      hasFirstFix = true;
+      map.flyTo([lat, lng], 13, { animate: true, duration: 1.2 });
     }
   }
 
@@ -2441,6 +2759,8 @@ SG.initLiveLocation = function () {
           }
           SG.triggerInjectAnimation(SG._locMap, t.lat, t.lng, inferredType, t.name,
             `Critical anomaly detected at ${t.name}`);
+          // Auto-switch dashboard to this critical station + show takeover banner
+          SG.autoSelectStation(t.id, inferredType, t.name);
         }
       }
     });
@@ -2492,21 +2812,28 @@ SG.initLiveLocation = function () {
     userLat = lat;
     userLng = lng;
 
+    /* Update marker + accuracy ring; fly to location only on first fix */
     setUserPosition(lat, lng, accuracy);
-    map.setView([lat, lng], 12);
 
     /* Update coordinate bar */
     if (lcbLat) lcbLat.textContent = lat.toFixed(5);
     if (lcbLng) lcbLng.textContent = lng.toFixed(5);
     if (lcbAlt) lcbAlt.textContent = altitude != null ? altitude.toFixed(0) + ' m' : 'N/A';
-    if (lcbSpd) lcbSpd.textContent = speed != null ? (speed * 3.6).toFixed(1) + ' km/h' : 'N/A';
-    if (accBadge) accBadge.textContent = `Accuracy: ±${accuracy.toFixed(0)} m`;
+    if (lcbSpd) lcbSpd.textContent = speed    != null ? (speed * 3.6).toFixed(1) + ' km/h' : '0.0 km/h';
+    if (accBadge) accBadge.textContent = `±${accuracy.toFixed(0)} m accuracy`;
 
     /* Update tracking pill */
     if (trackingText) trackingText.textContent = 'Tracking Active';
     if (trackingPill) {
+      trackingPill.classList.remove('alert-pill');
       const dot = trackingPill.querySelector('.pulse');
       if (dot) dot.style.background = 'var(--green)';
+    }
+    if (locStatusPill) {
+      locStatusPill.innerHTML = `<span class="pulse" style="background:var(--green)"></span> TRACKING ACTIVE`;
+      locStatusPill.style.color = 'var(--green)';
+      locStatusPill.style.borderColor = 'rgba(46,204,113,.3)';
+      locStatusPill.style.background  = 'rgba(46,204,113,.08)';
     }
 
     /* Re-run analysis */
@@ -2517,12 +2844,35 @@ SG.initLiveLocation = function () {
   /* ── Geolocation error callback ───────────────────────── */
   function onError(err) {
     acquiringOvl?.classList.add('hidden');
+
     if (err.code === err.PERMISSION_DENIED) {
+      /* User blocked location — show persistent denied overlay */
       deniedOvl?.classList.remove('hidden');
-      if (locStatusPill) locStatusPill.innerHTML = `<span class="pulse" style="background:var(--red)"></span> ACCESS DENIED`;
+      if (locStatusPill) {
+        locStatusPill.innerHTML = `<span class="pulse" style="background:var(--red)"></span> ACCESS DENIED`;
+        locStatusPill.style.color = 'var(--red)';
+        locStatusPill.style.background = 'rgba(231,76,60,.1)';
+        locStatusPill.style.borderColor = 'rgba(231,76,60,.3)';
+      }
+      stopTracking();
+
+    } else if (err.code === err.TIMEOUT) {
+      /* GPS timed out — keep watching, show warning, auto-retry */
+      showToast('GPS timeout — still searching…', '⏳');
+      if (trackingText) trackingText.textContent = 'Searching for GPS…';
+      acquiringOvl?.classList.remove('hidden');
+      /* watchPosition automatically retries; no action needed beyond UI */
+
     } else {
-      showToast('GPS signal lost. Retrying…', '📡');
-      if (trackingText) trackingText.textContent = 'Signal Lost — Retrying';
+      /* Position unavailable (err.code 2) */
+      showToast('Location unavailable. Check device GPS settings.', '📡');
+      if (trackingText) trackingText.textContent = 'Signal Unavailable';
+      if (locStatusPill) {
+        locStatusPill.innerHTML = `<span class="pulse" style="background:var(--orange)"></span> GPS UNAVAILABLE`;
+        locStatusPill.style.color = 'var(--orange)';
+        locStatusPill.style.background = '';
+        locStatusPill.style.borderColor = '';
+      }
     }
   }
 
@@ -2532,44 +2882,71 @@ SG.initLiveLocation = function () {
       showToast('Geolocation not supported in this browser.', '⚠️');
       return;
     }
+
+    /* Reset first-fix flag so map flies to user on reconnect */
+    hasFirstFix = false;
+
     isTracking = true;
     acquiringOvl?.classList.remove('hidden');
     startBtn?.setAttribute('disabled', '');
     stopBtn?.removeAttribute('disabled');
     centerBtn?.removeAttribute('disabled');
-    if (locStatusPill) locStatusPill.innerHTML = `<span class="pulse"></span> ACQUIRING GPS`;
+    if (locStatusPill) {
+      locStatusPill.innerHTML = `<span class="pulse"></span> ACQUIRING GPS`;
+      locStatusPill.style.color = '';
+      locStatusPill.style.background = '';
+      locStatusPill.style.borderColor = '';
+    }
 
     watchId = navigator.geolocation.watchPosition(onPosition, onError, {
       enableHighAccuracy : true,
-      maximumAge         : 5000,
-      timeout            : 15000,
+      maximumAge         : 3000,    // accept a cached position up to 3 s old
+      timeout            : 20000,   // wait up to 20 s per fix
     });
 
-    /* Drift confidence levels every 6 s to simulate live anomaly changes */
+    /* Drift confidence every 6 s — syncs to real weather data */
     confDriftTimer = setInterval(driftConf, 6000);
 
-    showToast('GPS tracking started.', '📡');
+    showToast('GPS tracking started. Acquiring signal…', '📡');
   }
 
   function stopTracking() {
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     clearInterval(confDriftTimer); confDriftTimer = null;
-    isTracking = false;
+    isTracking   = false;
+    hasFirstFix  = false;   // reset so next session flies to user again
+
     startBtn?.removeAttribute('disabled');
     stopBtn?.setAttribute('disabled', '');
     centerBtn?.setAttribute('disabled', '');
     acquiringOvl?.classList.add('hidden');
     threatPill?.classList.add('hidden');
+
     if (trackingText) trackingText.textContent = 'Not tracking';
-    if (trackingPill) { const d = trackingPill.querySelector('.pulse'); if (d) d.style.background = 'var(--muted)'; }
-    if (locStatusPill) { locStatusPill.style.color = ''; locStatusPill.style.background = ''; locStatusPill.style.borderColor = ''; locStatusPill.innerHTML = `<span class="pulse" style="background:var(--muted)"></span> TRACKING STOPPED`; }
+    if (trackingPill) {
+      const d = trackingPill.querySelector('.pulse');
+      if (d) d.style.background = 'var(--muted)';
+    }
+    if (locStatusPill) {
+      locStatusPill.style.color       = '';
+      locStatusPill.style.background  = '';
+      locStatusPill.style.borderColor = '';
+      locStatusPill.innerHTML = `<span class="pulse" style="background:var(--muted)"></span> TRACKING STOPPED`;
+    }
+
+    /* Remove stale user location layers from map */
+    if (userMarker)     { map.removeLayer(userMarker);     userMarker     = null; }
+    if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
+    userLat = null;
+    userLng = null;
+
     showToast('Tracking stopped.', '⏹️');
   }
 
   startBtn?.addEventListener('click',  startTracking);
   stopBtn?.addEventListener('click',   stopTracking);
   centerBtn?.addEventListener('click', () => {
-    if (userLat !== null) map.setView([userLat, userLng], 10, { animate:true });
+    if (userLat !== null) map.flyTo([userLat, userLng], map.getZoom(), { animate: true, duration: 0.8 });
   });
 
   /* ── Multi-Style Tile Selector & Compass Control ─────── */
@@ -2608,13 +2985,16 @@ SG.initLiveLocation = function () {
 
   SG.setLocMapTheme = function (styleKey) {
     SG.setLocMapStyle(styleKey);
-    ['locDarkBtn', 'locLightBtn', 'locSatBtn'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.classList.remove('active');
+    const LABELS = { dark: { icon: '🌙', label: 'Cyber' }, streets: { icon: '☀️', label: 'Streets' }, satellite: { icon: '🛰️', label: 'Satellite' } };
+    const meta = LABELS[styleKey] || LABELS.dark;
+    const iconEl  = document.getElementById('locLayerIcon');
+    const labelEl = document.getElementById('locLayerLabel');
+    if (iconEl)  iconEl.textContent  = meta.icon;
+    if (labelEl) labelEl.textContent = meta.label;
+    /* sync active state on menu options */
+    document.querySelectorAll('#locLayerMenu .map-layer-option').forEach(o => {
+      o.classList.toggle('active', o.dataset.key === styleKey);
     });
-    if (styleKey === 'dark') document.getElementById('locDarkBtn')?.classList.add('active');
-    else if (styleKey === 'streets') document.getElementById('locLightBtn')?.classList.add('active');
-    else if (styleKey === 'satellite') document.getElementById('locSatBtn')?.classList.add('active');
   };
   SG.setLocMapLayer = SG.setLocMapTheme;
 

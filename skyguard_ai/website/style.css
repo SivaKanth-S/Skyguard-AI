@@ -775,48 +775,125 @@ img.leaflet-tile.dark-cyber-tile {
   white-space: nowrap;
 }
 
-.map-theme-btn-group {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: var(--map-overlay-bg);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(14px);
-  border-radius: 18px;
-  padding: 2px 3px;
-  box-shadow: var(--shadow);
+/* ── Map layer dropdown (single button with flyout menu) ── */
+.map-layer-dropdown {
+  position: relative;
+  z-index: 1003;
 }
 
-.map-theme-toggle-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  font-family: var(--font, 'Inter', sans-serif);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 14px;
-  cursor: pointer;
+.map-layer-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  user-select: none;
+  gap: 6px;
+  padding: 6px 12px 6px 11px;
+  background: rgba(13, 17, 23, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(18px);
+  border-radius: 22px;
+  color: #e6edf3;
+  font-family: var(--font, 'Inter', sans-serif);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
   outline: none;
+  white-space: nowrap;
+  letter-spacing: 0.25px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,.45), 0 0 0 1px rgba(88,166,255,.06);
+  user-select: none;
+}
+
+.map-layer-btn:hover {
+  border-color: rgba(88, 166, 255, 0.35);
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: 0 4px 20px rgba(0,0,0,.55), 0 0 0 1px rgba(88,166,255,.18);
+}
+
+.map-layer-dropdown.open .map-layer-btn {
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(20, 26, 36, 0.98);
+}
+
+.map-layer-icon  { font-size: 13px; line-height: 1; }
+.map-layer-label { font-size: 12px; font-weight: 700; }
+
+.map-layer-chevron {
+  width: 10px; height: 6px;
+  stroke: rgba(139, 148, 158, 0.8);
+  transition: transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275), stroke 0.18s;
+  flex-shrink: 0;
+}
+.map-layer-dropdown.open .map-layer-chevron {
+  transform: rotate(180deg);
+  stroke: #58a6ff;
+}
+
+/* Flyout menu */
+.map-layer-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 140px;
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid rgba(88, 166, 255, 0.2);
+  border-radius: 12px;
+  padding: 4px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0,0,0,.65), 0 0 0 1px rgba(88,166,255,.08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.96);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.175,0.885,0.32,1.275);
+}
+
+.map-layer-dropdown.open .map-layer-menu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.map-layer-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: rgba(139, 148, 158, 0.85);
+  font-family: var(--font, 'Inter', sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
 
-.map-theme-toggle-btn:hover {
-  color: var(--text);
+.map-layer-option:hover {
   background: rgba(88, 166, 255, 0.1);
+  color: #e6edf3;
 }
 
-.map-theme-toggle-btn.active {
-  background: var(--accent);
-  color: #ffffff;
-  box-shadow: 0 2px 10px rgba(88, 166, 255, 0.4);
-  transform: scale(1.02);
+.map-layer-option.active {
+  background: linear-gradient(135deg, rgba(88,166,255,.18) 0%, rgba(31,111,235,.18) 100%);
+  color: #58a6ff;
+  font-weight: 700;
 }
+
+.map-layer-option.active::after {
+  content: '✓';
+  margin-left: auto;
+  font-size: 11px;
+  color: #58a6ff;
+  font-weight: 800;
+}
+
+/* ── Keep old names as no-op so any stale references don't break ── */
+.map-theme-btn-group  { display: none; }
+.map-theme-toggle-btn { display: none; }
 
 .map-compass-btn {
   width: 36px; height: 36px; border-radius: 50%;

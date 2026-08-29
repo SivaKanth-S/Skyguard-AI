@@ -171,6 +171,68 @@
     }
     .rm-cancel:hover{border-color:var(--muted);color:var(--text);}
 
+    /* ── Station pill selector ──────────────────────────── */
+    .st-pill-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .st-pill-wrap > label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+    .st-pill-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-wrap: wrap;
+      background: rgba(13,17,23,.88);
+      border: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(18px);
+      border-radius: 22px;
+      padding: 4px 5px;
+      max-width: 720px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(88,166,255,.06);
+    }
+    .st-pill-btn {
+      background: transparent;
+      border: none;
+      color: rgba(139, 148, 158, 0.75);
+      font-family: var(--font, 'Inter', sans-serif);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: 17px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.18s ease, background 0.18s ease, transform 0.2s cubic-bezier(0.175,0.885,0.32,1.275), box-shadow 0.18s ease;
+      user-select: none;
+      outline: none;
+      white-space: nowrap;
+      letter-spacing: 0.25px;
+      line-height: 1;
+    }
+    .st-pill-btn:hover {
+      color: #e6edf3;
+      background: rgba(255,255,255,.07);
+    }
+    .st-pill-btn.active {
+      background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 12px rgba(88,166,255,.55), 0 1px 4px rgba(0,0,0,.35);
+      transform: scale(1.06);
+      text-shadow: 0 1px 4px rgba(0,0,0,.3);
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+    /* hidden real select — keeps JS compatibility */
+    #stSel { display: none; }
+
     /* ── Toast ──────────────────────────────────────────── */
     .sg-toast{
       position:fixed;bottom:28px;right:28px;z-index:99998;
@@ -249,6 +311,10 @@
             <span class="pulse"></span>
             <span id="mapStationCount">Tamil Nadu AWS · 20 Stations</span>
           </div>
+          <!-- Live weather data source indicator — updated by Open-Meteo cache -->
+          <div class="map-title-pill" style="font-size:10px;gap:5px;padding:5px 11px;opacity:.92" id="wxSourcePill">
+            🔄 Fetching weather…
+          </div>
           <div class="map-legend">
             <div class="map-legend-row"><span class="ml-dot" style="background:#2ecc71"></span>HEALTHY</div>
             <div class="map-legend-row"><span class="ml-dot" style="background:#f39c12"></span>DEGRADED</div>
@@ -279,11 +345,18 @@
 
         <!-- Map Controls: Layer Selector + Compass -->
         <div class="map-controls-group">
-          <!-- Map Layer Selector (independent from UI theme) -->
-          <div class="map-theme-btn-group">
-            <button type="button" class="map-theme-toggle-btn active" id="tnDarkBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('dark')" title="Cyber Dark Map Layer">🌙 Cyber</button>
-            <button type="button" class="map-theme-toggle-btn" id="tnLightBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('streets')" title="Streets Map Layer">☀️ Streets</button>
-            <button type="button" class="map-theme-toggle-btn" id="tnSatBtn" onclick="SG.setTNMapTheme && SG.setTNMapTheme('satellite')" title="Satellite Map Layer">🛰️ Sat</button>
+          <!-- Single map layer dropdown button -->
+          <div class="map-layer-dropdown" id="tnLayerDropdown">
+            <button class="map-layer-btn" id="tnLayerBtn" onclick="SG._toggleLayerDropdown('tnLayerDropdown')" title="Switch map layer">
+              <span class="map-layer-icon" id="tnLayerIcon">🌙</span>
+              <span class="map-layer-label" id="tnLayerLabel">Cyber</span>
+              <svg class="map-layer-chevron" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="map-layer-menu" id="tnLayerMenu">
+              <button class="map-layer-option active" data-key="dark"      onclick="SG.setTNMapTheme('dark');      SG._closeLayerDropdown('tnLayerDropdown')">🌙 Cyber</button>
+              <button class="map-layer-option"        data-key="streets"   onclick="SG.setTNMapTheme('streets');   SG._closeLayerDropdown('tnLayerDropdown')">☀️ Streets</button>
+              <button class="map-layer-option"        data-key="satellite" onclick="SG.setTNMapTheme('satellite'); SG._closeLayerDropdown('tnLayerDropdown')">🛰️ Satellite</button>
+            </div>
           </div>
           <!-- Compass -->
           <button class="map-compass-btn" id="tnCompassBtn" title="Compass: Click to reset orientation to North" onclick="SG.resetTNMapOrientation && SG.resetTNMapOrientation()">
@@ -341,9 +414,10 @@
 
     <!-- Controls -->
     <div class="controls">
-      <div class="ctl-grp">
+      <div class="st-pill-wrap">
         <label>Station</label>
-        <select id="stSel">
+        <!-- Hidden select keeps existing JS change listeners working -->
+        <select id="stSel" aria-hidden="true">
           <option value="0">Chennai — Nungambakkam</option>
           <option value="1">Madurai — Meenambakkam</option>
           <option value="2">Coimbatore — Peelamedu</option>
@@ -365,6 +439,29 @@
           <option value="18">Karur — Pappireddipatti</option>
           <option value="19">Virudhunagar</option>
         </select>
+        <!-- Visible pill-button row -->
+        <div class="st-pill-group" id="stPillGroup">
+          <button class="st-pill-btn active" data-val="0">📡 Chennai</button>
+          <button class="st-pill-btn" data-val="1">📡 Madurai</button>
+          <button class="st-pill-btn" data-val="2">📡 Coimbatore</button>
+          <button class="st-pill-btn" data-val="3">📡 Trichy</button>
+          <button class="st-pill-btn" data-val="4">📡 Salem</button>
+          <button class="st-pill-btn" data-val="5">📡 Tirunelveli</button>
+          <button class="st-pill-btn" data-val="6">📡 Vellore</button>
+          <button class="st-pill-btn" data-val="7">📡 Erode</button>
+          <button class="st-pill-btn" data-val="8">📡 Thoothukudi</button>
+          <button class="st-pill-btn" data-val="9">📡 Dindigul</button>
+          <button class="st-pill-btn" data-val="10">📡 Kancheepuram</button>
+          <button class="st-pill-btn" data-val="11">📡 Thanjavur</button>
+          <button class="st-pill-btn" data-val="12">📡 Nagapattinam</button>
+          <button class="st-pill-btn" data-val="13">📡 Ooty</button>
+          <button class="st-pill-btn" data-val="14">📡 Rameshwaram</button>
+          <button class="st-pill-btn" data-val="15">📡 Cuddalore</button>
+          <button class="st-pill-btn" data-val="16">📡 Puducherry</button>
+          <button class="st-pill-btn" data-val="17">📡 Hosur</button>
+          <button class="st-pill-btn" data-val="18">📡 Karur</button>
+          <button class="st-pill-btn" data-val="19">📡 Virudhunagar</button>
+        </div>
       </div>
       <!-- Anomaly injection is now fully automatic — driven by live sensor readings -->
       <div class="ctl-grp">

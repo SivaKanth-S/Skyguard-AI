@@ -246,18 +246,33 @@
 
     /* user location dot */
     .user-loc-icon {
-      width:18px; height:18px; border-radius:50%;
-      background:#58a6ff; border:2.5px solid #fff;
-      box-shadow:0 0 0 4px rgba(88,166,255,.3),0 0 16px rgba(88,166,255,.5);
+      width:20px; height:20px; border-radius:50%;
+      background:#58a6ff; border:3px solid #fff;
+      box-shadow:0 0 0 4px rgba(88,166,255,.35), 0 2px 12px rgba(88,166,255,.6);
+      position:relative;
+    }
+    /* expanding ring behind the dot */
+    .user-loc-icon::after {
+      content:'';
+      position:absolute;
+      inset:-8px;
+      border-radius:50%;
+      border:2px solid rgba(88,166,255,.5);
+      animation:locRingOut 2s ease-out infinite;
     }
     .user-loc-icon.tracking {
-      animation:locPulse 1.8s ease-in-out infinite;
+      animation:locPulse 1.6s ease-in-out infinite;
     }
 
     /* user location marker pulse animation */
     @keyframes locPulse {
-      0%,100% { box-shadow:0 0 0 4px rgba(88,166,255,.3),0 0 16px rgba(88,166,255,.5); }
-      50%      { box-shadow:0 0 0 10px rgba(88,166,255,.08),0 0 28px rgba(88,166,255,.3); }
+      0%,100% { box-shadow:0 0 0 4px rgba(88,166,255,.35), 0 2px 12px rgba(88,166,255,.6); }
+      50%      { box-shadow:0 0 0 12px rgba(88,166,255,.1), 0 2px 22px rgba(88,166,255,.4); }
+    }
+    @keyframes locRingOut {
+      0%   { transform:scale(1);   opacity:.7; }
+      80%  { transform:scale(2.2); opacity:0;  }
+      100% { transform:scale(2.2); opacity:0;  }
     }
     @media(max-width:768px) {
       .loc-kpi-row  { grid-template-columns:repeat(2,1fr); }
@@ -348,11 +363,18 @@
 
       <!-- Map Controls: Layer Selector + Compass -->
       <div class="map-controls-group">
-        <!-- Map Layer Selector (independent from UI theme) -->
-        <div class="map-theme-btn-group">
-          <button type="button" class="map-theme-toggle-btn active" id="locDarkBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('dark')" title="Cyber Dark Map Layer">🌙 Cyber</button>
-          <button type="button" class="map-theme-toggle-btn" id="locLightBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('streets')" title="Streets Map Layer">☀️ Streets</button>
-          <button type="button" class="map-theme-toggle-btn" id="locSatBtn" onclick="SG.setLocMapTheme && SG.setLocMapTheme('satellite')" title="Satellite Map Layer">🛰️ Sat</button>
+        <!-- Single map layer dropdown button -->
+        <div class="map-layer-dropdown" id="locLayerDropdown">
+          <button class="map-layer-btn" id="locLayerBtn" onclick="SG._toggleLayerDropdown('locLayerDropdown')" title="Switch map layer">
+            <span class="map-layer-icon" id="locLayerIcon">🌙</span>
+            <span class="map-layer-label" id="locLayerLabel">Cyber</span>
+            <svg class="map-layer-chevron" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="map-layer-menu" id="locLayerMenu">
+            <button class="map-layer-option active" data-key="dark"      onclick="SG.setLocMapTheme('dark');      SG._closeLayerDropdown('locLayerDropdown')">🌙 Cyber</button>
+            <button class="map-layer-option"        data-key="streets"   onclick="SG.setLocMapTheme('streets');   SG._closeLayerDropdown('locLayerDropdown')">☀️ Streets</button>
+            <button class="map-layer-option"        data-key="satellite" onclick="SG.setLocMapTheme('satellite'); SG._closeLayerDropdown('locLayerDropdown')">🛰️ Satellite</button>
+          </div>
         </div>
         <!-- Compass -->
         <button class="map-compass-btn" id="locCompassBtn" title="Compass: Click to reset orientation to North" onclick="SG.resetLocMapOrientation && SG.resetLocMapOrientation()">
@@ -374,6 +396,10 @@
         </div>
         <div class="loc-pill alert-pill hidden" id="threatPill">
           ⚠️ <span id="threatPillText">THREAT DETECTED</span>
+        </div>
+        <!-- Live weather data source indicator — mirrors dashboard wxSourcePill -->
+        <div class="loc-pill" id="wxSourcePill" style="font-size:10px;gap:5px;padding:5px 11px;margin-left:auto;opacity:.88">
+          🔄 Fetching weather…
         </div>
       </div>
 
