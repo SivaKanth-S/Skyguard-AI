@@ -298,17 +298,63 @@ code { font-family: var(--mono); color: var(--accent); }
 .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
 .panel h4 { font-size:13px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
 .live-badge { font-size:9px; background:rgba(46,204,113,.2); color:var(--green); padding:2px 7px; border-radius:8px; animation:pulse 2s infinite; }
-.st-list { display:flex; flex-direction:column; gap:10px; }
-.st-item { display:flex; align-items:center; gap:10px; padding:10px; background:var(--surface2); border-radius:7px; border-left:3px solid var(--green); }
-.st-item.deg { border-left-color:var(--yellow); }
-.st-item.fault { border-left-color:var(--orange); }
-.st-item.crit  { border-left-color:var(--red); }
-.st-dot { width:9px; height:9px; border-radius:50%; background:var(--green); flex-shrink:0; }
-.st-item.deg .st-dot  { background:var(--yellow); }
-.st-item.fault .st-dot{ background:var(--orange); }
-.st-item.crit .st-dot { background:var(--red); }
-.st-info strong { font-size:12px; display:block; }
-.st-info small  { font-size:10px; color:var(--muted); }
+/* ── Station Health list ─────────────────────────────── */
+.st-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.st-list::-webkit-scrollbar { width: 4px; }
+.st-list::-webkit-scrollbar-track { background: transparent; }
+.st-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.st-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border-radius: 7px;
+  border-left: 3px solid var(--green);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.st-item:hover          { background: rgba(88,166,255,.06); border-left-color: var(--accent); }
+.st-item.selected       { background: rgba(88,166,255,.10); border-left-color: var(--accent); box-shadow: 0 0 0 1px rgba(88,166,255,.22); }
+.st-item.deg            { border-left-color: var(--yellow); }
+.st-item.fault          { border-left-color: var(--orange); }
+.st-item.crit           { border-left-color: var(--red); }
+.st-item.deg.selected   { background: rgba(243,156,18,.09); box-shadow: 0 0 0 1px rgba(243,156,18,.2); }
+.st-item.fault.selected { background: rgba(230,126,34,.09); box-shadow: 0 0 0 1px rgba(230,126,34,.2); }
+.st-item.crit.selected  { background: rgba(231,76,60,.1);   box-shadow: 0 0 0 1px rgba(231,76,60,.25); }
+
+.st-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.st-item.deg .st-dot   { background: var(--yellow); }
+.st-item.fault .st-dot { background: var(--orange); }
+.st-item.crit .st-dot  { background: var(--red); }
+
+.st-info        { flex: 1; min-width: 0; }
+.st-info strong { font-size: 11px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-info small  { font-size: 9px; color: var(--muted); }
+
+.st-pct {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--green);
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+}
+.st-pct.deg   { color: var(--yellow); }
+.st-pct.fault { color: var(--orange); }
+.st-pct.crit  { color: var(--red); }
 .af { display:flex; flex-direction:column; gap:7px; max-height:210px; overflow-y:auto; }
 .af-empty { color:var(--muted); font-size:12px; text-align:center; padding:18px; }
 .af-item { display:flex; gap:10px; align-items:flex-start; padding:9px 12px; background:var(--surface2); border-radius:7px; border-left:3px solid var(--yellow); animation:slideIn .3s ease; }

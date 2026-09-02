@@ -645,198 +645,36 @@ SG.initDashboard = function () {
   function updStations() {
     const el = document.getElementById('stList');
     if (!el) return;
-    // Only show the currently selected station
-    const s   = state.sts[state.si];
-    const r   = s.total > 0 ? s.anoms / s.total : 0;
-    const lbl = r < .02 ? 'HEALTHY' : r < .08 ? 'DEGRADED' : r < .2 ? 'FAULT' : 'CRITICAL';
-    const cc  = r < .02 ? '' : r < .08 ? 'deg' : r < .2 ? 'fault' : 'crit';
-    el.innerHTML = `<div class="st-item ${cc}"><div class="st-dot"></div><div class="st-info"><strong>${s.name}</strong><small>${s.anoms}/${s.total} anomalies · ${lbl}</small></div></div>`;
-    // push updates to the map
+    // Render all stations in a compact scrollable list; highlight the selected one
+    const rows = state.sts.map((s, i) => {
+      const r   = s.total > 0 ? s.anoms / s.total : 0;
+      const lbl = r < .02 ? 'HEALTHY' : r < .08 ? 'DEGRADED' : r < .2 ? 'FAULT' : 'CRITICAL';
+      const cc  = r < .02 ? '' : r < .08 ? 'deg' : r < .2 ? 'fault' : 'crit';
+      const sel = i === state.si ? 'selected' : '';
+      const pct = s.total > 0 ? Math.round((s.anoms / s.total) * 100) : 0;
+      return `<div class="st-item ${cc} ${sel}" data-si="${i}" title="${s.name}">
+        <div class="st-dot"></div>
+        <div class="st-info">
+          <strong>${s.name}</strong>
+          <small>${s.anoms} / ${s.total} &nbsp;&middot;&nbsp; ${lbl}</small>
+        </div>
+        <span class="st-pct ${cc}">${pct}%</span>
+      </div>`;
+    });
+    el.innerHTML = rows.join('');
+    // clicking a row switches the active station
+    el.querySelectorAll('.st-item[data-si]').forEach(row => {
+      row.addEventListener('click', () => {
+        const newSi = +row.dataset.si;
+        if (newSi !== state.si) {
+          const sel = document.getElementById('stSel');
+          if (sel) { sel.value = newSi; sel.dispatchEvent(new Event('change')); }
+        }
+      });
+    });
+    // push live marker colours to the map
     if (typeof SG._mapUpdateMarkers === 'function') SG._mapUpdateMarkers(state.sts);
   }
-
-  const ROOT = {
-    spike_temp:'Spike — Temperature', spike_pres:'Spike — Pressure',
-    frozen:'Sensor Frozen', oor:'Physical Impossibility — OOR',
-    multi:'Multivariate Inconsistency', missing:'Communication Loss',
-    none:'Statistical deviation',
-  };
-
-  function addAlert(r) {
-    const feed = document.getElementById('alertFeed');
-    if (!feed) return;
-    feed.querySelector('.af-empty')?.remove();
-    const item = document.createElement('div');
-    item.className = `af-item ${r.sev.toLowerCase()}`;
-    const stName = state.sts[state.si].name;
-    const vals   = r.t==null ? 'ALL NULL' : `T=${r.t?.toFixed(1)}°C P=${r.p?.toFixed(1)}hPa H=${r.h?.toFixed(1)}%`;
-    item.innerHTML = `<div class="af-sev ${r.sev}">${r.sev}</div>
-      <div class="af-text"><strong>${stName}</strong>
-        <span>${vals} · ${(r.s*100).toFixed(1)}%</span>
-        <span style="font-size:10px">${ROOT[r.a]||'Anomaly'}</span>
-      </div>`;
-    feed.insertBefore(item, feed.firstChild);
-    while (feed.children.length > 14) feed.removeChild(feed.lastChild);
-  }
-
-  /* ── AUTO ANOMALY DETECTION HELPERS ──────────────────────── */
-  /* Cooldown map: stationIdx → timestamp of last auto-triggered animation.
-     Prevents flooding the map with animations on consecutive ticks.       */
-  const _autoAnimCooldown = {};
-  const AUTO_ANIM_INTERVAL_MS = 12000; // minimum 12 s between auto-animations per station
-
-  /* Detect whether the given reading + recent history breaches a critical
-     physical threshold. Returns an anomaly type string or null.          */
-  function autoDetectAnom(si, r) {
-    const hx          = getHist(si);
-    const recentTemps = hx.t.slice(-18);
-
-    // Missing: all sensors null
-    if (r.t == null && r.p == null && r.h == null) return 'missing';
-
-    // Physical impossibility — temperature way out of range
-    if (r.t != null && r.t > 60) return 'oor';
-
-    // Pressure spike
-    if (r.p != null && r.p > 1084) return 'spike_pres';
-
-    // Multivariate: all three sensors simultaneously extreme
-    if (r.t != null && r.t > 50 && r.h != null && r.h > 90 && r.p != null && r.p > 1050) return 'multi';
-
-    // Temperature spike: sudden jump vs last reading
-    if (r.t != null && recentTemps.length >= 2) {
-      const prev = recentTemps[recentTemps.length - 1];
-      if (prev != null && Math.abs(r.t - prev) > 10) return 'spike_temp';
-    }
-
-    // Frozen sensor: temperature completely flat over last 18 readings
-    if (recentTemps.length >= 18 && recentTemps.every(v => v != null)) {
-      const mean = recentTemps.reduce((a, b) => a + b, 0) / recentTemps.length;
-      const variance = recentTemps.reduce((s, v) => s + (v - mean) ** 2, 0) / recentTemps.length;
-      if (Math.sqrt(variance) < 0.05) return 'frozen';
-    }
-
-    return null;
-  }
-
-  function tick() {
-    const si = state.si;
-    /* Guard: skip if this station was removed */
-    if (state.sts[si]?.removed) return;
-    const r  = gen();
-
-    /* ── AUTO CRITICAL ANOMALY DETECTION ──────────────────
-       Only fires when user has NOT manually set an anomaly type.
-       Checks all sensor values against physical thresholds and
-       injects animation + raises confidence to CRITICAL range.  */
-    if (state.atype === 'none') {
-      const autoType = autoDetectAnom(si, r);
-      if (autoType) {
-        // Override confidence into CRITICAL range
-        r.s   = 0.88 + Math.random() * 0.10;
-        r.sev = 'CRITICAL';
-        r.a   = autoType;
-
-        // Throttle animation per station to avoid spam
-        const now     = Date.now();
-        const lastAnim = _autoAnimCooldown[si] || 0;
-        if (now - lastAnim > AUTO_ANIM_INTERVAL_MS) {
-          _autoAnimCooldown[si] = now;
-          const st = TN_STATIONS[si] || (SG._customStationById ? SG._customStationById(si) : null);
-          if (st) {
-            // Fire on dashboard map
-            if (SG._tnMap) {
-              SG.triggerInjectAnimation(SG._tnMap, st.lat, st.lng, autoType, st.name);
-            }
-            // Mirror to location map if it's open
-            if (SG._locMap) {
-              SG.triggerInjectAnimation(SG._locMap, st.lat, st.lng, autoType, st.name);
-            }
-            // Auto-switch dashboard to this station + show critical banner
-            SG.autoSelectStation(si, autoType, st.name);
-          }
-          // Instant marker update — bypass ratio delay by calling applyStyle directly
-          if (typeof SG._applyStationStyle === 'function') {
-            SG._applyStationStyle(si, '#e74c3c', si === state.si, true);
-          }
-        }
-      }
-    }
-    /* ─────────────────────────────────────────────────────── */
-
-    const hx = getHist(si);
-    push(hx.t, r.t); push(hx.p, r.p); push(hx.h, r.h); push(hx.s, r.s); push(hx.lb, r.lb);
-    state.total++; state.sts[si].total++;
-    // update current station live values
-    state.sts[si].t    = r.t ?? state.sts[si].t;
-    state.sts[si].p    = r.p ?? state.sts[si].p;
-    state.sts[si].h    = r.h ?? state.sts[si].h;
-    state.sts[si].conf = r.s;
-    state.sts[si].sev  = r.sev;
-    if (r.sev !== 'NORMAL') {
-      state.anoms++; state.crits += r.sev==='CRITICAL'?1:0;
-      state.sts[si].anoms++; state.sev[r.sev]++;
-      addAlert(r);
-    }
-    updCharts(); updKPIs(); updStations();
-  }
-
-  const start = () => { clearInterval(timer); timer = setInterval(tick, state.speed); };
-  start();
-
-  /* ── controls ── */
-  document.getElementById('stSel')?.addEventListener('change', e => {
-    const newSi = +e.target.value;
-    /* Reset per-session KPIs when switching stations */
-    state.total = 0;
-    state.anoms = 0;
-    state.crits = 0;
-    state.sev   = { CRITICAL:0, HIGH:0, MEDIUM:0, LOW:0 };
-    /* Clear alert feed */
-    const feed = document.getElementById('alertFeed');
-    if (feed) feed.innerHTML = '<div class="af-empty">No anomalies detected yet…</div>';
-    state.si = newSi;
-    /* Ensure this station entry exists in state.sts */
-    if (!state.sts[newSi]) {
-      const cst = SG._customStationById ? SG._customStationById(newSi) : null;
-      if (cst) {
-        state.sts[newSi] = { name:cst.name, short:cst.short, total:0, anoms:0, sev:'NORMAL', t:cst.t, p:cst.p, h:cst.h, conf:0.05, custom:true };
-      }
-    }
-    if (typeof SG._mapSelectStation === 'function') SG._mapSelectStation(newSi);
-    /* Sync pill button active state when select changes programmatically */
-    document.querySelectorAll('#stPillGroup .st-pill-btn').forEach(b => {
-      b.classList.toggle('active', +b.dataset.val === newSi);
-    });
-  });
-
-  /* ── Station pill buttons ── */
-  document.querySelectorAll('#stPillGroup .st-pill-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const val = btn.dataset.val;
-      /* Update hidden select and fire change (runs all KPI reset / map logic above) */
-      const sel = document.getElementById('stSel');
-      if (sel && sel.value !== val) {
-        sel.value = val;
-        sel.dispatchEvent(new Event('change'));
-      }
-    });
-  });
-  
-  document.querySelectorAll('.sp-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      document.querySelectorAll('.sp-btn').forEach(x => x.classList.remove('on'));
-      b.classList.add('on'); state.speed = +b.dataset.ms; if(state.on) start();
-    });
-  });
-
-  const tb = document.getElementById('toggleBtn');
-  const ti = document.getElementById('toggleIcon');
-  tb?.addEventListener('click', () => {
-    state.on = !state.on;
-    if (state.on) { start(); if(ti)ti.textContent='⏸'; if(tb)tb.childNodes[tb.childNodes.length-1].textContent=' Pause'; }
-    else          { clearInterval(timer);timer=null; if(ti)ti.textContent='▶'; if(tb)tb.childNodes[tb.childNodes.length-1].textContent=' Resume'; }
-  });
 
   // Expose state for map to read
   SG._dashState = state;
@@ -2195,10 +2033,10 @@ SG.initAnalysis = function () {
       },
       options: {
         responsive:true, maintainAspectRatio:false, animation:{duration:400},
-        plugins:{ legend:{display:false}, tooltip:{...TT2, callbacks:{label:c=>` Confidence: ${(c.parsed.y*100).toFixed(1)}%`}} },
+        plugins:{ legend:{display:false}, tooltip:{...getTT2(), callbacks:{label:c=>` Confidence: ${(c.parsed.y*100).toFixed(1)}%`}} },
         scales:{
-          x:{ grid:{color:gridColor}, ticks:{maxTicksLimit:8, font:{size:10}, color:'#6e7681'} },
-          y:{ min:0, max:1, grid:{color:gridColor}, ticks:{color:C.orange, font:{size:10}, callback:v=>(v*100).toFixed(0)+'%'} },
+          x:{ grid:{color:getGridColor()}, ticks:{maxTicksLimit:8, font:{size:10}, color:'#6e7681'} },
+          y:{ min:0, max:1, grid:{color:getGridColor()}, ticks:{color:C.orange, font:{size:10}, callback:v=>(v*100).toFixed(0)+'%'} },
         },
       },
     });
@@ -2212,7 +2050,7 @@ SG.initAnalysis = function () {
       data: { labels: typeLabels.map(t => t.charAt(0).toUpperCase()+t.slice(1)), datasets:[{ data:typeVals, backgroundColor:typeCols, borderColor:'#161b22', borderWidth:3, hoverOffset:6 }] },
       options: {
         responsive:true, maintainAspectRatio:false, cutout:'60%',
-        plugins:{ legend:{position:'right', labels:{font:{size:10}, padding:10, usePointStyle:true}}, tooltip:{...TT2, callbacks:{label:c=>` ${c.label}: ${c.parsed}`}} },
+        plugins:{ legend:{position:'right', labels:{font:{size:10}, padding:10, usePointStyle:true}}, tooltip:{...getTT2(), callbacks:{label:c=>` ${c.label}: ${c.parsed}`}} },
       },
     });
 
@@ -2223,7 +2061,7 @@ SG.initAnalysis = function () {
       data: { labels:['CRITICAL','HIGH','MEDIUM','LOW'], datasets:[{ data:sevVals, backgroundColor:[C.red,C.orange,C.yellow,C.blue], borderColor:'#161b22', borderWidth:3, hoverOffset:6 }] },
       options: {
         responsive:true, maintainAspectRatio:false, cutout:'60%',
-        plugins:{ legend:{position:'right', labels:{font:{size:10}, padding:10, usePointStyle:true}}, tooltip:{...TT2, callbacks:{label:c=>` ${c.label}: ${c.parsed}`}} },
+        plugins:{ legend:{position:'right', labels:{font:{size:10}, padding:10, usePointStyle:true}}, tooltip:{...getTT2(), callbacks:{label:c=>` ${c.label}: ${c.parsed}`}} },
       },
     });
 
@@ -2287,10 +2125,10 @@ SG.initAnalysis = function () {
       },
       options: {
         responsive:true, maintainAspectRatio:false, animation:{duration:400},
-        plugins:{ legend:{display:false}, tooltip:{...TT2} },
+        plugins:{ legend:{display:false}, tooltip:{...getTT2()} },
         scales:{
-          x:{ grid:{color:gridColor}, ticks:{ font:{size:10}, color:'#6e7681', maxRotation:45 } },
-          y:{ grid:{color:gridColor}, ticks:{ font:{size:10}, color:colMap[cmpMetric] } },
+          x:{ grid:{color:getGridColor()}, ticks:{ font:{size:10}, color:'#6e7681', maxRotation:45 } },
+          y:{ grid:{color:getGridColor()}, ticks:{ font:{size:10}, color:colMap[cmpMetric] } },
         },
       },
     });
