@@ -1,0 +1,10 @@
+{
+  "include": [
+    "skyguard_ai"
+  ],
+  "extraPaths": [
+    "skyguard_ai",
+    "skyguard_ai/src",
+    "skyguard_ai/configs"
+  ]
+}

@@ -86,8 +86,13 @@ Saves 30-day synthetic AWS data to `data/aws_sample_data.csv`.
 py -m pytest tests/ -v
 ```
 
-### 7. Open the website
-Open `website/index.html` in a browser to explore the 6-page interactive showcase (no server required).
+### 7. Run the React Web Application
+```bash
+cd website-react
+npm install
+npm run dev
+```
+Open `http://localhost:5173/` in a browser to explore the 8-page interactive React showcase with live Leaflet maps, Chart.js visualizations, and GPS tracking.
 
 ---
 

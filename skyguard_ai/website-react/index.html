@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="SkyGuard AI — Intelligent Real-Time Anomaly Detection & Self-Healing for Weather Stations using Hybrid ML Pipelines and SHAP Explainability." />
+    <title>SkyGuard AI — Weather Station Anomaly Intelligence</title>
+    <!-- Pre-apply theme to prevent flash -->
+    <script>
+      (function(){
+        try {
+          const t = localStorage.getItem('skyguard_theme') || 'dark';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch(e){}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha512-Zcn6HvY/4ddhOYsLrnur3OrhnEkxeGm8hV583Zvh5GzM5W0eL704qR/6Q7s6H5A4l2fWz4m2A==" crossorigin="" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
