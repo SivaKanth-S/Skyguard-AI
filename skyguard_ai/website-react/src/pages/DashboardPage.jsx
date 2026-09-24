@@ -4,11 +4,58 @@ import { useTheme } from '../context/ThemeContext';
 import { TN_STATIONS, fetchLiveWeatherForStations } from '../data/stations';
 import StationMap from '../components/StationMap';
 
+// Autonomous engine tuning — mirrors the location map's auto-fault rhythm.
+const ENGINE_INTERVAL_MS = 9000;
+const MAX_AUTO_FAULTS = 3;
+const FAULT_LIFETIME_CYCLES = 3;
+
+const FAULT_TYPES = [
+  {
+    type: 'spike', status: 'CRITICAL', conf: 0.42,
+    msg: (name, t) => `Extreme spike detected on ${name}: ${(t + 38.2).toFixed(1)}°C (+38.2°C jump in 10 min).`,
+    action: 'Rate-of-change physics rule triggered. Cross-validating with nearest AWS.',
+  },
+  {
+    type: 'freeze', status: 'FAULT', conf: 0.42,
+    msg: (name) => `Frozen sensor: Consecutive zero variance over past 18 steps on ${name}.`,
+    action: 'Rolling std < 0.001. Check mechanical sensor transducer.',
+  },
+  {
+    type: 'drift', status: 'DEGRADED', conf: 0.42,
+    msg: (name) => `Calibration drift: Long-term Z-score exceeded 3.2σ on ${name}.`,
+    action: 'Systematic offset detected. Auto-imputation active.',
+  },
+  {
+    type: 'oor', status: 'CRITICAL', conf: 0.42,
+    msg: (name, t) => `Hard physics bound violation: ${(t + 42).toFixed(1)}°C exceeds station maximum limit of 60.0°C.`,
+    action: 'Immediate station quarantine. Fallback to spatial interpolation.',
+  },
+  {
+    type: 'multi', status: 'FAULT', conf: 0.78,
+    msg: (name) => `Multivariate inconsistency on ${name}: hot + humid + high pressure combined is physically impossible.`,
+    action: 'Cross-sensor validation failed. Review all sensor channels simultaneously.',
+  },
+  {
+    type: 'noise', status: 'DEGRADED', conf: 0.6,
+    msg: (name) => `Noise burst on ${name}: high-frequency EMI fluctuations sustained over 30 minutes.`,
+    action: 'Check cable shielding. Inspect power supply filtering.',
+  },
+  {
+    type: 'missing', status: 'CRITICAL', conf: 0.95,
+    msg: (name) => `Communication loss on ${name}: NULL telemetry for over an hour.`,
+    action: 'Check network, data logger power supply, and SIM card.',
+  },
+];
+
 export default function DashboardPage() {
   const { isLight } = useTheme();
   const [selectedStationId, setSelectedStationId] = useState(0);
   const [liveWeather, setLiveWeather] = useState({});
-  const [stationStates, setStationStates] = useState({});
+  // Seeded to match the initial detection log + the location map's fault zones.
+  const [stationStates, setStationStates] = useState({
+    3: { status: 'CRITICAL', activeAnomaly: 'spike', conf: 0.42, cycles: 0 },
+    4: { status: 'FAULT', activeAnomaly: 'freeze', conf: 0.42, cycles: 0 },
+  });
   const [timeSeriesData, setTimeSeriesData] = useState([]);
   const [anomalyLogs, setAnomalyLogs] = useState([
     {
@@ -22,10 +69,10 @@ export default function DashboardPage() {
     {
       time: '10:02:10',
       station: 'Salem — Fairlands',
-      type: 'DRIFT',
-      sev: 'HIGH',
-      msg: 'Barometric pressure showing sustained +0.4 hPa/hr drift over 6h window.',
-      action: 'Schedule barometric recalibration.'
+      type: 'FREEZE',
+      sev: 'FAULT',
+      msg: 'Frozen sensor: Consecutive zero variance over past 18 steps on Salem — Fairlands.',
+      action: 'Rolling std < 0.001. Check mechanical sensor transducer.'
     }
   ]);
 
@@ -42,6 +89,77 @@ export default function DashboardPage() {
     });
   }, []);
 
+  // Refs mirror state for the interval engine (avoids stale closures).
+  const stationStatesRef = useRef({});
+  const liveWeatherRef = useRef({});
+  useEffect(() => { stationStatesRef.current = stationStates; }, [stationStates]);
+  useEffect(() => { liveWeatherRef.current = liveWeather; }, [liveWeather]);
+
+  // Autonomous anomaly-detection engine — faults raise themselves, age, and
+  // self-heal. StationMap fires its shockwave burst + HUD automatically from
+  // stationStates transitions. Replaces the old manual injection sandbox.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const prev = stationStatesRef.current || {};
+      const live = liveWeatherRef.current || {};
+      const next = { ...prev };
+      const events = [];
+      const now = new Date().toLocaleTimeString();
+      let dirty = false;
+
+      // 1. Age active faults; self-heal past their lifetime.
+      Object.entries(next).forEach(([sid, s]) => {
+        if (!s || s.status === 'HEALTHY') return;
+        const age = (s.cycles ?? 0) + 1;
+        if (age >= FAULT_LIFETIME_CYCLES) {
+          const st = TN_STATIONS.find(x => x.id === Number(sid));
+          const name = st?.name ?? `Station ${sid}`;
+          next[sid] = { status: 'HEALTHY', activeAnomaly: null, conf: 0.985 };
+          events.push({
+            time: now,
+            station: name,
+            type: 'RECOVERY',
+            sev: 'HEALTHY',
+            msg: `Station ${name} telemetry normalized. Self-healing imputation complete. All checks green.`,
+            action: 'Normal operational stream restored.',
+          });
+        } else {
+          next[sid] = { ...s, cycles: age };
+        }
+        dirty = true;
+      });
+
+      // 2. Raise a new fault on a healthy station (capped concurrency).
+      const activeCount = Object.values(next).filter(s => s?.status && s.status !== 'HEALTHY').length;
+      if (activeCount < MAX_AUTO_FAULTS && Math.random() < 0.6) {
+        const candidates = TN_STATIONS.filter(st => (next[st.id]?.status || 'HEALTHY') === 'HEALTHY');
+        if (candidates.length) {
+          const st = candidates[(Math.random() * candidates.length) | 0];
+          const f = FAULT_TYPES[(Math.random() * FAULT_TYPES.length) | 0];
+          const baseT = live[st.id]?.t ?? st.t;
+          next[st.id] = { status: f.status, activeAnomaly: f.type, conf: f.conf, cycles: 0 };
+          events.push({
+            time: now,
+            station: st.name,
+            type: f.type.toUpperCase(),
+            sev: f.status,
+            msg: f.msg(st.name, baseT),
+            action: f.action,
+          });
+          dirty = true;
+        }
+      }
+
+      if (dirty) {
+        setStationStates(next);
+        if (events.length) {
+          setAnomalyLogs(prevLogs => [...events, ...prevLogs].slice(0, 15));
+        }
+      }
+    }, ENGINE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+
   // Selected station object
   const currentSt = TN_STATIONS.find(s => s.id === selectedStationId) || TN_STATIONS[0];
   const currentState = stationStates[selectedStationId] || {
@@ -53,7 +171,7 @@ export default function DashboardPage() {
     activeAnomaly: null,
   };
 
-  // Generate mock time-series when station changes or anomaly injected
+  // Generate mock time-series when station changes or an auto fault is detected
   useEffect(() => {
     const points = 20;
     const baseTemp = liveWeather[selectedStationId]?.t ?? currentSt.t;
@@ -70,9 +188,15 @@ export default function DashboardPage() {
         t = 76.0;
       } else if (currentState.activeAnomaly === 'freeze' && i > points - 6) {
         t = baseTemp;
+      } else if (currentState.activeAnomaly === 'noise') {
+        t += (Math.random() - 0.5) * 9; // EMI jitter across the window
+      } else if (currentState.activeAnomaly === 'missing' && i > points - 4) {
+        t = null; // communication gap at the tail
+      } else if (currentState.activeAnomaly === 'multi' && i === points - 1) {
+        t = baseTemp + 18; // physically inconsistent hot reading
       }
 
-      return { time: timeStr, temp: +t.toFixed(1), pres: +p.toFixed(1) };
+      return { time: timeStr, temp: t == null ? null : +t.toFixed(1), pres: +p.toFixed(1) };
     });
 
     setTimeSeriesData(data);
@@ -204,58 +328,9 @@ export default function DashboardPage() {
     };
   }, [isLight]);
 
-  // Inject Anomaly Handler
-  const handleInject = (type) => {
-    const now = new Date().toLocaleTimeString();
-    let newStatus = 'CRITICAL';
-    let msg = '';
-    let action = '';
-
-    if (type === 'spike') {
-      newStatus = 'CRITICAL';
-      msg = `Extreme spike detected on ${currentSt.name}: 72.4°C (+38.2°C jump in 10 min).`;
-      action = 'Rate-of-change physics rule triggered. Cross-validating with nearest AWS.';
-    } else if (type === 'freeze') {
-      newStatus = 'FAULT';
-      msg = `Frozen sensor: Consecutive zero variance over past 18 steps on ${currentSt.name}.`;
-      action = 'Rolling std < 0.001. Check mechanical sensor transducer.';
-    } else if (type === 'drift') {
-      newStatus = 'DEGRADED';
-      msg = `Calibration drift: Long-term Z-score exceeded 3.2σ on ${currentSt.name}.`;
-      action = 'Systematic offset detected. Auto-imputation active.';
-    } else if (type === 'oor') {
-      newStatus = 'CRITICAL';
-      msg = `Hard physics bound violation: 76.0°C exceeds station maximum limit of 60.0°C.`;
-      action = 'Immediate station quarantine. Fallback to spatial interpolation.';
-    } else {
-      // Clear
-      newStatus = 'HEALTHY';
-      msg = `Station ${currentSt.name} telemetry normalized. All checks green.`;
-      action = 'Normal operational stream restored.';
-    }
-
-    setStationStates(prev => ({
-      ...prev,
-      [selectedStationId]: {
-        ...prev[selectedStationId],
-        status: newStatus,
-        activeAnomaly: type === 'clear' ? null : type,
-        conf: type === 'clear' ? 0.985 : 0.42
-      }
-    }));
-
-    setAnomalyLogs(prev => [
-      {
-        time: now,
-        station: currentSt.name,
-        type: type.toUpperCase(),
-        sev: newStatus,
-        msg,
-        action
-      },
-      ...prev.slice(0, 14)
-    ]);
-  };
+  const activeFaultCount = Object.values(stationStates).filter(
+    s => s?.status && s.status !== 'HEALTHY'
+  ).length;
 
   return (
     <div>
@@ -307,33 +382,24 @@ export default function DashboardPage() {
             anomalyEvents={anomalyLogs}
           />
 
-          {/* FAULT INJECTION SIMULATOR CONTROLS */}
+          {/* AUTONOMOUS DETECTION ENGINE STATUS — faults detect themselves */}
           <div className="card" style={{ marginBottom: '24px', padding: '16px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <strong style={{ fontSize: '13px', display: 'block' }}>
-                  ⚡ Fault Injection Sandbox ({currentSt.short})
+                <strong style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="pulse"></span> Autonomous Detection Engine — ACTIVE
                 </strong>
                 <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                  Trigger real-time telemetry faults to test ML ensemble detection, SHAP explainability, and auto-imputation.
+                  The ML ensemble scans all {TN_STATIONS.length} stations every 9s. Detected faults raise map shockwave bursts + HUD alerts automatically, then self-heal.
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="loc-btn danger" onClick={() => handleInject('spike')}>
-                  + Spike
-                </button>
-                <button className="loc-btn" onClick={() => handleInject('freeze')}>
-                  + Freeze
-                </button>
-                <button className="loc-btn" onClick={() => handleInject('drift')}>
-                  + Drift
-                </button>
-                <button className="loc-btn danger" onClick={() => handleInject('oor')}>
-                  + Out-of-Range
-                </button>
-                <button className="loc-btn primary" onClick={() => handleInject('clear')}>
-                  ✓ Clear / Reset
-                </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="loc-pill">
+                  🚨 {activeFaultCount} active fault{activeFaultCount === 1 ? '' : 's'}
+                </span>
+                <span className="loc-pill">
+                  📡 {TN_STATIONS.length} stations monitored
+                </span>
               </div>
             </div>
           </div>

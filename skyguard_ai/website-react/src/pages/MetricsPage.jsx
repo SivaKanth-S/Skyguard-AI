@@ -11,7 +11,7 @@ import {
   TEST_SUITE
 } from '../data/metricsData';
 
-export default function MetricsPage() {
+export default function MetricsPage({ embed = false }) {
   const { isLight } = useTheme();
   const radarCanvasRef = useRef(null);
   const radarChartRef = useRef(null);
@@ -140,22 +140,24 @@ export default function MetricsPage() {
 
   return (
     <div>
-      {/* PAGE HERO */}
-      <div className="page-hero">
-        <div className="wrap page-hero-row">
-          <div>
-            <div className="label">Evaluation Results</div>
-            <h1 className="page-title">Performance Metrics</h1>
-            <p className="page-desc">
-              Benchmarked on a 30-day held-out test set with 4% injected anomaly contamination. 30 / 30 unit tests passing.
-            </p>
-          </div>
-          <div className="page-stat">
-            <span className="big">98%</span>
-            <small>ROC-AUC Score</small>
+      {/* PAGE HERO (hidden when embedded in the Insights page) */}
+      {!embed && (
+        <div className="page-hero">
+          <div className="wrap page-hero-row">
+            <div>
+              <div className="label">Evaluation Results</div>
+              <h1 className="page-title">Performance Metrics</h1>
+              <p className="page-desc">
+                Benchmarked on a 30-day held-out test set with 4% injected anomaly contamination. 30 / 30 unit tests passing.
+              </p>
+            </div>
+            <div className="page-stat">
+              <span className="big">98%</span>
+              <small>ROC-AUC Score</small>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="page-body">
         <div className="wrap">

@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 
 export default function Navbar() {
-  const { theme, toggleTheme, isLight } = useTheme();
+  const { toggleTheme, isLight } = useTheme();
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -20,10 +20,7 @@ export default function Navbar() {
     { path: '/', label: 'Home' },
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/analysis', label: 'Analysis' },
-    { path: '/anomalies', label: 'Anomalies' },
-    { path: '/architecture', label: 'Architecture' },
-    { path: '/usecases', label: 'Use Cases' },
-    { path: '/metrics', label: 'Metrics' },
+    { path: '/insights', label: 'Insights' },
     { path: '/location', label: 'Live Location' },
   ];
 

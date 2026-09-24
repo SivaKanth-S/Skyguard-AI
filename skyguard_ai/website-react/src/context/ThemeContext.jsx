@@ -31,7 +31,7 @@ export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('skyguard_theme') || 'dark';
-    } catch (e) {
+    } catch {
       return 'dark';
     }
   });
@@ -55,7 +55,7 @@ export function ThemeProvider({ children }) {
 
     try {
       localStorage.setItem('skyguard_theme', theme);
-    } catch (e) {}
+    } catch {}
   }, [theme]);
 
   const toggleTheme = () => {

@@ -1,25 +1,66 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useTheme } from '../context/ThemeContext';
 import { TN_STATIONS } from '../data/stations';
+import {
+  BURST_COOLDOWN_MS,
+  BURST_TTL_MS,
+  HUD_TTL_MS,
+  TN_BOUNDS,
+  TN_CENTER,
+  TN_MIN_ZOOM,
+  TN_ZOOM,
+  faultMeta,
+  haloDivIcon,
+  isAnomalyStatus,
+  spawnAnomalyBurst,
+} from './anomalyEffects';
+import AnomalyHudBanner from './AnomalyHudBanner';
 
-const TILES = {
-  dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-    name: 'Cyber'
-  },
-  streets: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-    name: 'Streets'
-  },
-  satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri',
-    name: 'Satellite'
-  }
-};
+// CARTO raster basemaps require an API key (?key=...) — without a valid key
+// tiles render with an "API KEY REQUIRED" watermark (HTTP 200, so no tileerror).
+// Key is read from Vite env, with the project key as fallback so the map works
+// even if the dev server wasn't restarted after editing .env.
+// Official format: https://{s}.basemaps.cartocdn.com/{style}/{z}/{x}/{y}.png?key=KEY
+function getCartoKey() {
+  const fromEnv = (import.meta.env.VITE_CARTO_KEY || '').trim();
+  return fromEnv || 'cb1_3w8k_1_40c9422bcdd3d78b75d6104a';
+}
+
+function buildTiles() {
+  const CARTO_KEY = getCartoKey();
+  return {
+    dark: {
+      url: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20,
+      name: 'Cyber'
+    },
+    streets: {
+      url: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20,
+      name: 'Streets'
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+      subdomains: undefined,
+      maxZoom: 19,
+      name: 'Satellite'
+    },
+    osm: {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      subdomains: 'abc',
+      maxZoom: 19,
+      name: 'OSM Backup'
+    }
+  };
+}
 
 const SEV_COL = {
   HEALTHY: '#2ecc71',
@@ -37,7 +78,7 @@ export default function StationMap({
   liveWeather = {},
   anomalyEvents = []
 }) {
-  const { theme, isLight } = useTheme();
+  const { isLight } = useTheme();
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
   const tileLayerRef = useRef(null);
@@ -47,12 +88,16 @@ export default function StationMap({
   const [activeTileKey, setActiveTileKey] = useState(isLight ? 'streets' : 'dark');
   const [layerDropdownOpen, setLayerDropdownOpen] = useState(false);
   const [addMode, setAddMode] = useState(false);
+  const [hud, setHud] = useState(null); // { key, status, title, detail } — anomaly HUD banner
   const [modalData, setModalData] = useState(null); // { lat, lng, name, radius }
+  const burstCleanupsRef = useRef([]);
+  const prevStatusRef = useRef(null);
+  const burstCooldownRef = useRef({});
   const [customStations, setCustomStations] = useState(() => {
     try {
       const raw = localStorage.getItem('skyguard_custom_stations');
       return raw ? JSON.parse(raw) : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   });
@@ -62,24 +107,66 @@ export default function StationMap({
     setActiveTileKey(isLight ? 'streets' : 'dark');
   }, [isLight]);
 
+  // Attach a tile layer with one-time OSM fallback if CARTO/Esri errors out.
+  // (The "API KEY REQUIRED" watermark is an HTTP 200 image, so it can't be
+  // auto-detected — a valid key in .env is the real fix for that.)
+  const attachTileLayer = (map, tileKey) => {
+    const defs = buildTiles();
+    const tileDef = defs[tileKey] || defs.dark;
+    const layerOpts = {
+      attribution: tileDef.attribution,
+      maxZoom: tileDef.maxZoom,
+    };
+    if (tileDef.subdomains) layerOpts.subdomains = tileDef.subdomains;
+    const layer = L.tileLayer(tileDef.url, layerOpts);
+    // If the provider 4xx/5xx (bad key, quota, offline), fall back to OSM once.
+    layer.on('tileerror', () => {
+      try {
+        if (tileLayerRef.current === layer && tileKey !== 'osm' && map) {
+          map.removeLayer(layer);
+          const fb = defs.osm;
+          tileLayerRef.current = L.tileLayer(fb.url, {
+            attribution: fb.attribution,
+            maxZoom: fb.maxZoom,
+            subdomains: fb.subdomains,
+          }).addTo(map);
+        }
+      } catch { /* ignore fallback errors */ }
+    });
+    tileLayerRef.current = layer.addTo(map);
+  };
+
   // Initialize Map
   useEffect(() => {
     if (!mapRef.current) return;
 
     if (!leafletMap.current) {
       const map = L.map(mapRef.current, {
-        center: [11.1271, 78.6569],
-        zoom: 7,
-        zoomControl: true,
+        center: TN_CENTER,
+        zoom: TN_ZOOM,
+        // No +/- zoom buttons — zoom via scroll / pinch / double-click only.
+        zoomControl: false,
+        // Fence the view to Tamil Nadu — no panning/zooming out past the state.
+        minZoom: TN_MIN_ZOOM,
+        maxBounds: TN_BOUNDS,
+        maxBoundsViscosity: 1.0,
       });
 
       leafletMap.current = map;
 
-      const tileDef = TILES[activeTileKey] || TILES.dark;
-      tileLayerRef.current = L.tileLayer(tileDef.url, {
-        attribution: tileDef.attribution,
-        maxZoom: 18,
-      }).addTo(map);
+      // Use theme-correct layer on first paint (avoids stale closure on activeTileKey).
+      attachTileLayer(map, isLight ? 'streets' : 'dark');
+
+      // Fix half-rendered tiles when the map container becomes visible late
+      setTimeout(() => { try { map.invalidateSize(); } catch {} }, 250);
+
+      // Hard clamp: never zoom out past the Tamil Nadu framing in your
+      // screenshot — wheel, pinch, buttons, or double-click can't go wider.
+      map.on('zoomend', () => {
+        if (map.getZoom() < TN_MIN_ZOOM) {
+          try { map.setZoom(TN_MIN_ZOOM); } catch { /* keep current view */ }
+        }
+      });
 
       // Handle map click in add mode
       map.on('click', (e) => {
@@ -111,13 +198,10 @@ export default function StationMap({
   useEffect(() => {
     if (!leafletMap.current) return;
     if (tileLayerRef.current) {
-      leafletMap.current.removeLayer(tileLayerRef.current);
+      try { leafletMap.current.removeLayer(tileLayerRef.current); } catch { /* already removed */ }
+      tileLayerRef.current = null;
     }
-    const tileDef = TILES[activeTileKey] || TILES.dark;
-    tileLayerRef.current = L.tileLayer(tileDef.url, {
-      attribution: tileDef.attribution,
-      maxZoom: 18,
-    }).addTo(leafletMap.current);
+    attachTileLayer(leafletMap.current, activeTileKey);
   }, [activeTileKey]);
 
   // Render station markers
@@ -130,6 +214,7 @@ export default function StationMap({
       m.circle.remove();
       m.dot.remove();
       m.label.remove();
+      if (m.halo) m.halo.remove();
     });
     markersRef.current = [];
 
@@ -174,6 +259,16 @@ export default function StationMap({
         if (onSelectStation) onSelectStation(st.id);
       });
 
+      // 2b. Persistent severity halo behind anomalous dots — continuous
+      // "under detection" cue; pulse speed encodes severity (see haloDivIcon).
+      const halo = isAnomalyStatus(status)
+        ? L.marker([st.lat, st.lng], {
+            icon: haloDivIcon(status),
+            interactive: false,
+            keyboard: false,
+          }).addTo(map)
+        : null;
+
       // 3. Label
       const labelIcon = L.divIcon({
         className: `sg-label ${isSel ? 'sel' : ''}`,
@@ -183,9 +278,77 @@ export default function StationMap({
       });
       const label = L.marker([st.lat, st.lng], { icon: labelIcon, interactive: false }).addTo(map);
 
-      markersRef.current.push({ id: st.id, circle, dot, label });
+      markersRef.current.push({ id: st.id, circle, dot, label, halo });
     });
   }, [selectedStationId, stationStates, liveWeather, onSelectStation]);
+
+  // One-shot detection burst + HUD banner when a station NEWLY turns anomalous.
+  // Ports b3c0408's SG.triggerInjectAnimation to React: shockwave rings +
+  // cyber reticle + floating badge (spawnAnomalyBurst) with a 12s per-station
+  // cooldown so background flapping can't spam the map.
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const now = {};
+    TN_STATIONS.forEach((st) => {
+      now[st.id] = stationStates[st.id]?.status || 'HEALTHY';
+    });
+    if (prev) {
+      const t = Date.now();
+      TN_STATIONS.forEach((st) => {
+        const next = now[st.id];
+        if (!isAnomalyStatus(next) || isAnomalyStatus(prev[st.id])) return;
+        if (t - (burstCooldownRef.current[st.id] || 0) < BURST_COOLDOWN_MS) return;
+        burstCooldownRef.current[st.id] = t;
+        // Fault-specific effect: spike / freeze / drift / out-of-range each
+        // get their own burst color, reticle, badge, and HUD styling.
+        const faultType = stationStates[st.id]?.activeAnomaly ?? null;
+        const fm = faultMeta(faultType, next);
+        const map = leafletMap.current;
+        if (map) {
+          try { map.panTo([st.lat, st.lng], { animate: true, duration: 0.6 }); } catch { /* pan optional */ }
+          const cleanup = spawnAnomalyBurst(map, {
+            lat: st.lat,
+            lng: st.lng,
+            status: next,
+            faultType,
+            title: fm.label,
+            subtitle: st.name,
+          });
+          if (cleanup) {
+            burstCleanupsRef.current.push(cleanup);
+            setTimeout(() => {
+              burstCleanupsRef.current = burstCleanupsRef.current.filter((c) => c !== cleanup);
+            }, BURST_TTL_MS + 100);
+          }
+        }
+        const wx = liveWeather[st.id] || {};
+        setHud({
+          key: `${st.id}-${t}`,
+          status: next,
+          faultType,
+          title: `${st.name}: ${fm.label}`,
+          detail: `T ${wx.t ?? st.t}°C · P ${wx.p ?? st.p} hPa · H ${wx.h ?? st.h}% — cross-validating with nearest AWS`,
+        });
+      });
+    }
+    prevStatusRef.current = now;
+  }, [stationStates, liveWeather]);
+
+  // Auto-dismiss the HUD banner like the vanilla implementation (5.5s).
+  useEffect(() => {
+    if (!hud) return;
+    const t = setTimeout(() => setHud(null), HUD_TTL_MS);
+    return () => clearTimeout(t);
+  }, [hud]);
+
+  // Tear down pending burst markers alongside the map (map.remove() drops
+  // their layers anyway; this only clears their TTL timers).
+  useEffect(() => {
+    const pending = burstCleanupsRef;
+    return () => {
+      pending.current.forEach((fn) => { try { fn(); } catch { /* already removed */ } });
+    };
+  }, []);
 
   // Render Custom User Stations
   useEffect(() => {
@@ -255,7 +418,7 @@ export default function StationMap({
     setCustomStations(updated);
     try {
       localStorage.setItem('skyguard_custom_stations', JSON.stringify(updated));
-    } catch (e) {}
+    } catch {}
 
     setModalData(null);
     setAddMode(false);
@@ -266,12 +429,12 @@ export default function StationMap({
     setCustomStations(updated);
     try {
       localStorage.setItem('skyguard_custom_stations', JSON.stringify(updated));
-    } catch (e) {}
+    } catch {}
   };
 
   const resetCompass = () => {
     if (leafletMap.current) {
-      leafletMap.current.setView([11.1271, 78.6569], 7);
+      leafletMap.current.setView(TN_CENTER, TN_ZOOM);
     }
   };
 
@@ -352,6 +515,9 @@ export default function StationMap({
           </div>
         </div>
 
+        {/* ANOMALY DETECTION HUD BANNER — shared with the location map */}
+        <AnomalyHudBanner hud={hud} onClose={() => setHud(null)} />
+
         {/* Selected Station Info Popup */}
         {currentSt && (
           <div className="map-info-popup" style={{ top: '56px', display: 'block' }}>
@@ -412,14 +578,11 @@ export default function StationMap({
               title="Switch map layer"
             >
               <span className="map-layer-icon">
-                {activeTileKey === 'dark' ? '🌙' : activeTileKey === 'streets' ? '☀️' : '🛰️'}
+                {activeTileKey === 'dark' ? '🌙' : activeTileKey === 'streets' ? '☀️' : activeTileKey === 'osm' ? '🗺️' : '🛰️'}
               </span>
               <span className="map-layer-label">
-                {TILES[activeTileKey]?.name || 'Layer'}
+                {buildTiles()[activeTileKey]?.name || 'Layer'}
               </span>
-              <svg className="map-layer-chevron" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
             </button>
             {layerDropdownOpen && (
               <div className="map-layer-menu">
@@ -440,6 +603,12 @@ export default function StationMap({
                   onClick={() => { setActiveTileKey('satellite'); setLayerDropdownOpen(false); }}
                 >
                   🛰️ Satellite
+                </button>
+                <button
+                  className={`map-layer-option ${activeTileKey === 'osm' ? 'active' : ''}`}
+                  onClick={() => { setActiveTileKey('osm'); setLayerDropdownOpen(false); }}
+                >
+                  🗺️ OSM Backup
                 </button>
               </div>
             )}

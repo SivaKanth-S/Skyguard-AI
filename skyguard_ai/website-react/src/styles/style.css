@@ -510,6 +510,9 @@ table.stbl tbody tr:hover td { background:var(--surface2); }
 /* ── Fade-in animation ───────────────────────────────── */
 .fi { opacity:0; transform:translateY(20px); transition:opacity .45s ease, transform .45s ease; }
 .fi.show { opacity:1; transform:translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .fi { opacity:1; transform:none; transition:none; }
+}
 
 /* ── Responsive ──────────────────────────────────────── */
 @media(max-width:1024px) {
@@ -863,17 +866,6 @@ img.leaflet-tile.dark-cyber-tile {
 .map-layer-icon  { font-size: 13px; line-height: 1; }
 .map-layer-label { font-size: 12px; font-weight: 700; }
 
-.map-layer-chevron {
-  width: 10px; height: 6px;
-  stroke: rgba(139, 148, 158, 0.8);
-  transition: transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275), stroke 0.18s;
-  flex-shrink: 0;
-}
-.map-layer-dropdown.open .map-layer-chevron {
-  transform: rotate(180deg);
-  stroke: #58a6ff;
-}
-
 /* Flyout menu */
 .map-layer-menu {
   position: absolute;
@@ -1196,6 +1188,46 @@ img.leaflet-tile.dark-cyber-tile {
   color: #fff;
 }
 
+/* Persistent severity halo — continuous "under detection" cue rendered
+   behind anomalous station dots. Pulse speed encodes severity via
+   --halo-dur (CRITICAL 1.2s → DEGRADED 2.2s, set in anomalyEffects.js). */
+.sg-sev-halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid var(--an-color, #e74c3c);
+  box-shadow: 0 0 16px var(--an-glow, rgba(231, 76, 60, 0.5));
+  opacity: 0.9;
+  pointer-events: none;
+  animation: sg-halo-ping var(--halo-dur, 1.6s) ease-out infinite;
+}
+
+@keyframes sg-halo-ping {
+  0% { transform: translate(-50%, -50%) scale(0.55); opacity: 0.9; }
+  70% { transform: translate(-50%, -50%) scale(1.25); opacity: 0.25; }
+  100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+}
+
+/* Respect users who prefer reduced motion: bursts/halos go static. */
+@media (prefers-reduced-motion: reduce) {
+  .sg-shockwave-ring,
+  .sg-sev-halo {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .sg-target-reticle,
+  .sg-floating-anomaly-badge,
+  .sg-floating-anomaly-badge .an-icon,
+  .sg-map-hud-banner {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* Stylish Inject Button */
 .btn-inject {
   background: linear-gradient(135deg, #ff3b30 0%, #ff7300 100%);
@@ -1493,7 +1525,6 @@ img.leaflet-tile.dark-cyber-tile {
 }
 [data-theme="light"] .map-layer-btn { background: rgba(255,255,255,.94); color: #1f2328; }
 .map-layer-btn:hover { border-color: var(--accent); color: var(--accent); }
-.map-layer-chevron { width: 10px; height: 6px; }
 .map-layer-menu {
   position: absolute; top: calc(100% + 6px); right: 0;
   background: var(--surface); border: 1px solid var(--border);
@@ -1702,4 +1733,21 @@ img.leaflet-tile.dark-cyber-tile {
 @media (max-width: 900px) {
   .an-kpi-row, .loc-kpi-row { grid-template-columns: repeat(2,1fr); }
   .an-chart-grid, .loc-panels { grid-template-columns: 1fr; }
+}
+
+/* ── Non-blocking GPS acquiring badge (map stays interactive) ── */
+.loc-acquiring-badge {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 500; pointer-events: none;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--map-overlay-bg, rgba(13,17,23,.92));
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 8px 16px; box-shadow: var(--shadow);
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.loc-acquiring-badge p { font-size: 12px; color: var(--muted); margin: 0; }
+.loc-spinner-sm {
+  width: 16px; height: 16px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .9s linear infinite; flex-shrink: 0;
 }

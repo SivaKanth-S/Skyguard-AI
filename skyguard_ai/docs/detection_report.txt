@@ -1,0 +1,26 @@
+============================================================
+   SKYGUARD AI - ANOMALY DETECTION REPORT
+============================================================
+Total records analyzed: 4320
+Total anomalies detected: 114
+Anomaly rate: 2.64%
+
+--- SEVERITY BREAKDOWN ---
+  CRITICAL: 4
+  HIGH    : 12
+  MEDIUM  : 19
+  LOW     : 79
+
+--- TOP ANOMALIES (by confidence) ---
+  [CRITICAL] 2024-07-30 12:10:00 | T=51.9°C P=1076.5hPa H=98.9% | Confidence=94.3% | Multivariate Inconsistency (Hot+Humid) | Spike / T
+  [CRITICAL] 2024-07-14 06:30:00 | T=53.4°C P=1046.2hPa H=99.8% | Confidence=94.2% | Multivariate Inconsistency (Hot+Humid) | Spike / T
+  [CRITICAL] 2024-07-18 08:30:00 | T=51.4°C P=1048.3hPa H=98.0% | Confidence=93.7% | Multivariate Inconsistency (Hot+Humid) | Spike / T
+  [CRITICAL] 2024-07-17 13:30:00 | T=55.8°C P=1045.1hPa H=93.9% | Confidence=93.0% | Multivariate Inconsistency (Hot+Humid) | Spike / T
+  [HIGH    ] 2024-07-26 15:50:00 | T=34.6°C P=1142.9hPa H=81.5% | Confidence=82.4% | Physical Impossibility - Pressure | Spike / Transi
+  [HIGH    ] 2024-07-05 04:10:00 | T=25.6°C P=1002.3hPa H=-12.3% | Confidence=77.2% | Physical Impossibility - Humidity
+  [HIGH    ] 2024-07-16 05:20:00 | T=0.5°C P=1002.1hPa H=90.4% | Confidence=76.0% | Spike / Transient Fault - Temperature
+  [HIGH    ] 2024-07-04 12:40:00 | T=34.8°C P=1002.8hPa H=-7.3% | Confidence=75.9% | Physical Impossibility - Humidity
+  [HIGH    ] 2024-07-19 22:40:00 | T=44.1°C P=1001.4hPa H=91.2% | Confidence=71.5% | Spike / Transient Fault - Temperature
+  [HIGH    ] 2024-07-19 21:30:00 | T=47.3°C P=1001.8hPa H=90.8% | Confidence=71.0% | Spike / Transient Fault - Temperature
+
+============================================================

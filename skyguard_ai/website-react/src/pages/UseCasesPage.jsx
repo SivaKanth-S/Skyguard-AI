@@ -1,25 +1,27 @@
 import React from 'react';
 import { USE_CASES, DEPLOYMENT_TABLE } from '../data/useCasesData';
 
-export default function UseCasesPage() {
+export default function UseCasesPage({ embed = false }) {
   return (
     <div>
-      {/* PAGE HERO */}
-      <div className="page-hero">
-        <div className="wrap page-hero-row">
-          <div>
-            <div className="label">Real-World Applications</div>
-            <h1 className="page-title">Use Cases</h1>
-            <p className="page-desc">
-              From agriculture to aviation — SkyGuard AI protects every system that depends on trustworthy meteorological data.
-            </p>
-          </div>
-          <div className="page-stat">
-            <span className="big">6</span>
-            <small>Sectors Covered</small>
+      {/* PAGE HERO (hidden when embedded in the Insights page) */}
+      {!embed && (
+        <div className="page-hero">
+          <div className="wrap page-hero-row">
+            <div>
+              <div className="label">Real-World Applications</div>
+              <h1 className="page-title">Use Cases</h1>
+              <p className="page-desc">
+                From agriculture to aviation — SkyGuard AI protects every system that depends on trustworthy meteorological data.
+              </p>
+            </div>
+            <div className="page-stat">
+              <span className="big">6</span>
+              <small>Sectors Covered</small>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="page-body">
         <div className="wrap">

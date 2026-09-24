@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ArchitecturePage() {
+export default function ArchitecturePage({ embed = false }) {
   const pipelineSteps = [
     {
       num: '01',
@@ -118,22 +118,24 @@ export default function ArchitecturePage() {
 
   return (
     <div>
-      {/* PAGE HERO */}
-      <div className="page-hero">
-        <div className="wrap page-hero-row">
-          <div>
-            <div className="label">System Design</div>
-            <h1 className="page-title">How SkyGuard AI Works</h1>
-            <p className="page-desc">
-              A four-layer pipeline from raw sensor readings to SHAP-explained, severity-classified alerts with corrective imputation.
-            </p>
-          </div>
-          <div className="page-stat">
-            <span className="big">75+</span>
-            <small>Features Engineered</small>
+      {/* PAGE HERO (hidden when embedded in the Insights page) */}
+      {!embed && (
+        <div className="page-hero">
+          <div className="wrap page-hero-row">
+            <div>
+              <div className="label">System Design</div>
+              <h1 className="page-title">How SkyGuard AI Works</h1>
+              <p className="page-desc">
+                A four-layer pipeline from raw sensor readings to SHAP-explained, severity-classified alerts with corrective imputation.
+              </p>
+            </div>
+            <div className="page-stat">
+              <span className="big">75+</span>
+              <small>Features Engineered</small>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="page-body">
         <div className="wrap">

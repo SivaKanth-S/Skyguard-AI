@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ANOMALY_TYPES, DETECTION_SUMMARY_TABLE } from '../data/anomaliesData';
 import MiniChart from '../components/MiniChart';
 
-export default function AnomaliesPage() {
+export default function AnomaliesPage({ embed = false }) {
   const [filter, setFilter] = useState('all');
 
   const filteredAnomalies = ANOMALY_TYPES.filter(a => {
@@ -12,22 +12,24 @@ export default function AnomaliesPage() {
 
   return (
     <div>
-      {/* PAGE HERO */}
-      <div className="page-hero">
-        <div className="wrap page-hero-row">
-          <div>
-            <div className="label">Detection Coverage</div>
-            <h1 className="page-title">Anomaly Type Reference</h1>
-            <p className="page-desc">
-              SkyGuard AI detects 7 distinct AWS fault patterns, each with dedicated strategies, severity levels, and recommended actions.
-            </p>
-          </div>
-          <div className="page-stat">
-            <span className="big">7</span>
-            <small>Anomaly Types</small>
+      {/* PAGE HERO (hidden when embedded in the Insights page) */}
+      {!embed && (
+        <div className="page-hero">
+          <div className="wrap page-hero-row">
+            <div>
+              <div className="label">Detection Coverage</div>
+              <h1 className="page-title">Anomaly Type Reference</h1>
+              <p className="page-desc">
+                SkyGuard AI detects 7 distinct AWS fault patterns, each with dedicated strategies, severity levels, and recommended actions.
+              </p>
+            </div>
+            <div className="page-stat">
+              <span className="big">7</span>
+              <small>Anomaly Types</small>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="page-body">
         <div className="wrap">

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import HeroCanvas from '../components/HeroCanvas';
 import StatCounter from '../components/StatCounter';
 import SensorCards from '../components/SensorCards';
-import CtaBand from '../components/CtaBand';
 
 export default function HomePage() {
   const exploreCards = [
@@ -22,7 +21,7 @@ export default function HomePage() {
       )
     },
     {
-      to: '/anomalies',
+      to: '/insights#anomalies',
       title: 'Anomaly Types',
       desc: '7 fault patterns - spikes, frozen sensors, drift, out-of-range, multivariate, noise, missing data.',
       grad: 'linear-gradient(135deg,#f093fb,#f5576c)',
@@ -34,7 +33,7 @@ export default function HomePage() {
       )
     },
     {
-      to: '/architecture',
+      to: '/insights#architecture',
       title: 'Architecture',
       desc: '4-layer pipeline: ingestion, 75+ features, hybrid ensemble, explainable alerts.',
       grad: 'linear-gradient(135deg,#4facfe,#00f2fe)',
@@ -47,7 +46,7 @@ export default function HomePage() {
       )
     },
     {
-      to: '/usecases',
+      to: '/insights#usecases',
       title: 'Use Cases',
       desc: 'Agriculture, aviation, flood forecasting, power grid, climate research, disaster management.',
       grad: 'linear-gradient(135deg,#43e97b,#38f9d7)',
@@ -59,7 +58,7 @@ export default function HomePage() {
       )
     },
     {
-      to: '/metrics',
+      to: '/insights#metrics',
       title: 'Performance Metrics',
       desc: '97.4% accuracy, 98% ROC-AUC, 30 tests passing - benchmarked against threshold baselines.',
       grad: 'linear-gradient(135deg,#fa709a,#fee140)',
@@ -72,7 +71,7 @@ export default function HomePage() {
       )
     },
     {
-      to: '/architecture#models',
+      to: '/insights#models',
       title: 'ML Models',
       desc: 'IsolationForest, RandomForest, Rule Engine, Z-Score - weighted ensemble fusion.',
       grad: 'linear-gradient(135deg,#a18cd1,#fbc2eb)',
@@ -178,7 +177,7 @@ export default function HomePage() {
             <Link to="/dashboard" className="btn btn-primary">
               Live Dashboard
             </Link>
-            <Link to="/architecture" className="btn btn-ghost">
+            <Link to="/insights#architecture" className="btn btn-ghost">
               How It Works
             </Link>
           </div>
@@ -264,7 +263,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <CtaBand />
     </div>
   );
 }

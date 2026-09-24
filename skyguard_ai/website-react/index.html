@@ -18,8 +18,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha512-Zcn6HvY/4ddhOYsLrnur3OrhnEkxeGm8hV583Zvh5GzM5W0eL704qR/6Q7s6H5A4l2fWz4m2A==" crossorigin="" />
+    <!-- Leaflet CSS (CDN fast path; components also bundle leaflet/dist/leaflet.css locally as fallback) -->
+    <!-- NOTE: no integrity hash on purpose — a mismatched SRI silently blocks the
+         stylesheet in some browsers, leaving the map unstyled/broken. -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
   </head>
   <body>
     <div id="root"></div>
