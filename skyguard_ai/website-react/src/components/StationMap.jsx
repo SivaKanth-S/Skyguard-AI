@@ -76,7 +76,8 @@ export default function StationMap({
   onSelectStation,
   stationStates = {},
   liveWeather = {},
-  anomalyEvents = []
+  anomalyEvents = [],
+  liveReadings = 0
 }) {
   const { isLight } = useTheme();
   const mapRef = useRef(null);
@@ -629,7 +630,7 @@ export default function StationMap({
         <div className="map-stats-bar">
           <div className="msb-item">
             <span className="msb-val" style={{ color: 'var(--accent)' }}>
-              {1240 + anomalyEvents.length * 12}
+              {1240 + liveReadings + anomalyEvents.length * 12}
             </span>
             <span className="msb-lbl">Readings</span>
           </div>

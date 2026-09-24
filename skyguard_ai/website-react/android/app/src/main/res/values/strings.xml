@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SkyGuard AI</string>
+    <string name="title_activity_main">SkyGuard AI</string>
+    <string name="package_name">com.skyguard.ai</string>
+    <string name="custom_url_scheme">com.skyguard.ai</string>
+</resources>

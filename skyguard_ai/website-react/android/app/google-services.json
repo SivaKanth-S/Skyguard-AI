@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "515913322761",
+    "project_id": "skyguard-ai-1ac3f",
+    "storage_bucket": "skyguard-ai-1ac3f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:515913322761:android:bee103b950ffb6206783d8",
+        "android_client_info": {
+          "package_name": "com.skyguard.ai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWspPDhN2NywdGRM7kDFT1Cdz8Zgvm84o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

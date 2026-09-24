@@ -1,0 +1,11 @@
+{
+  "appId": "com.skyguard.ai",
+  "appName": "SkyGuard AI",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

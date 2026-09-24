@@ -202,6 +202,50 @@ export default function DashboardPage() {
     setTimeSeriesData(data);
   }, [selectedStationId, currentState.activeAnomaly, liveWeather]);
 
+  // Live telemetry stream — one real reading every 2s from live weather +
+  // sensor jitter (fault-aware: spikes, gaps, and freezes show up live),
+  // appended to the chart tail, KPIs, and the readings counter.
+  const [livePoint, setLivePoint] = useState(null);
+  const [liveTicks, setLiveTicks] = useState(0);
+
+  useEffect(() => {
+    setLivePoint(null);
+    const id = setInterval(() => {
+      const st = TN_STATIONS.find(s => s.id === selectedStationId) || TN_STATIONS[0];
+      const base = liveWeather[selectedStationId] || {};
+      const state = stationStates[selectedStationId] || {};
+      const a = state.activeAnomaly;
+      let t = (base.t ?? st.t) + (Math.random() - 0.5) * 0.5;
+      const p = (base.p ?? st.p) + (Math.random() - 0.5) * 0.3;
+      if (a === 'missing') {
+        t = null;
+      } else if (a === 'spike') {
+        t = 72.4;
+      } else if (a === 'oor') {
+        t = 76.0;
+      } else if (a === 'freeze') {
+        t = base.t ?? st.t;
+      } else if (a === 'noise') {
+        t += (Math.random() - 0.5) * 9;
+      } else if (a === 'multi') {
+        t = (base.t ?? st.t) + 18;
+      }
+      setLivePoint({
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        temp: t == null ? null : +t.toFixed(1),
+        pres: +p.toFixed(1),
+      });
+      setLiveTicks(n => n + 1);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [selectedStationId, stationStates, liveWeather]);
+
+  // Append each live reading to the chart window (keeps last 20 points).
+  useEffect(() => {
+    if (!livePoint) return;
+    setTimeSeriesData(prev => (prev.length ? [...prev.slice(-19), livePoint] : prev));
+  }, [livePoint]);
+
   // Render Time-Series Chart
   useEffect(() => {
     const cv = timeSeriesCanvasRef.current;
@@ -380,6 +424,7 @@ export default function DashboardPage() {
             stationStates={stationStates}
             liveWeather={liveWeather}
             anomalyEvents={anomalyLogs}
+            liveReadings={liveTicks}
           />
 
           {/* AUTONOMOUS DETECTION ENGINE STATUS — faults detect themselves */}
@@ -414,15 +459,16 @@ export default function DashboardPage() {
             </div>
             <div className="loc-kpi">
               <div className="loc-kpi-val">
-                {liveWeather[currentSt.id]?.t ?? currentState.temp}°C
+                {livePoint ? (livePoint.temp ?? 'NO SIGNAL') : (liveWeather[currentSt.id]?.t ?? currentState.temp)}
+                {livePoint?.temp != null || !livePoint ? '°C' : ''}
               </div>
-              <div className="loc-kpi-lbl">Temperature (2m)</div>
+              <div className="loc-kpi-lbl">Temperature (2m) · Live</div>
             </div>
             <div className="loc-kpi">
               <div className="loc-kpi-val">
-                {liveWeather[currentSt.id]?.p ?? currentState.pres} hPa
+                {livePoint?.pres ?? liveWeather[currentSt.id]?.p ?? currentState.pres} hPa
               </div>
-              <div className="loc-kpi-lbl">Atmospheric Pressure</div>
+              <div className="loc-kpi-lbl">Atmospheric Pressure · Live</div>
             </div>
             <div className="loc-kpi">
               <div className="loc-kpi-val" style={{ color: 'var(--blue)' }}>
