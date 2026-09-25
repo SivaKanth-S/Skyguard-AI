@@ -39,6 +39,12 @@ function buildLayerDefs() {
       url: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${key}`,
       maxZoom: 20, subdomains: 'abcd', attribution: cartoAttr, name: 'Streets',
     },
+    road: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      maxZoom: 19, subdomains: undefined,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
+      name: 'Road',
+    },
     satellite: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       maxZoom: 19, subdomains: undefined,
@@ -54,7 +60,7 @@ function buildLayerDefs() {
   };
 }
 
-const LAYER_ICON = { dark: '🌙', streets: '☀️', satellite: '🛰️', osm: '🗺️' };
+const LAYER_ICON = { dark: '🌙', streets: '☀️', road: '🛣️', satellite: '🛰️', osm: '🗺️' };
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth radius in km
@@ -510,7 +516,7 @@ export default function LocationMap() {
             </button>
             {layerDropdownOpen && (
               <div className="map-layer-menu">
-                {['dark', 'streets', 'satellite', 'osm'].map(key => (
+                {['dark', 'streets', 'road', 'satellite', 'osm'].map(key => (
                   <button
                     key={key}
                     className={`map-layer-option ${activeTileKey === key ? 'active' : ''}`}

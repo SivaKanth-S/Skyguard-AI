@@ -45,6 +45,13 @@ function buildTiles() {
       maxZoom: 20,
       name: 'Streets'
     },
+    road: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
+      subdomains: undefined,
+      maxZoom: 19,
+      name: 'Road'
+    },
     satellite: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
@@ -579,7 +586,7 @@ export default function StationMap({
               title="Switch map layer"
             >
               <span className="map-layer-icon">
-                {activeTileKey === 'dark' ? '🌙' : activeTileKey === 'streets' ? '☀️' : activeTileKey === 'osm' ? '🗺️' : '🛰️'}
+                {activeTileKey === 'dark' ? '🌙' : activeTileKey === 'streets' ? '☀️' : activeTileKey === 'road' ? '🛣️' : activeTileKey === 'osm' ? '🗺️' : '🛰️'}
               </span>
               <span className="map-layer-label">
                 {buildTiles()[activeTileKey]?.name || 'Layer'}
@@ -598,6 +605,12 @@ export default function StationMap({
                   onClick={() => { setActiveTileKey('streets'); setLayerDropdownOpen(false); }}
                 >
                   ☀️ Streets
+                </button>
+                <button
+                  className={`map-layer-option ${activeTileKey === 'road' ? 'active' : ''}`}
+                  onClick={() => { setActiveTileKey('road'); setLayerDropdownOpen(false); }}
+                >
+                  🛣️ Road
                 </button>
                 <button
                   className={`map-layer-option ${activeTileKey === 'satellite' ? 'active' : ''}`}

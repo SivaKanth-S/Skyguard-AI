@@ -23,8 +23,9 @@ export default function Navbar() {
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/analysis', label: 'Analysis' },
     { path: '/insights', label: 'Insights' },
-    { path: '/location', label: 'Live Location' },
+    { path: '/location', label: 'Route Planner' },
   ];
+  const isLocActive = location.pathname === '/location' || location.pathname === '/route';
 
   return (
     <nav className={`nav ${isScrolled || location.pathname !== '/' ? 'scrolled' : ''}`} id="nav">
@@ -34,7 +35,9 @@ export default function Navbar() {
         </Link>
         <ul className={`nav-links ${mobileMenuOpen ? 'open' : ''}`} id="navLinks">
           {navLinks.map(link => {
-            const isActive = location.pathname === link.path;
+            const isActive = link.path === '/location'
+              ? isLocActive
+              : location.pathname === link.path;
             return (
               <li key={link.path}>
                 <Link
@@ -99,7 +102,9 @@ export default function Navbar() {
             </Link>
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => signOut()}
+              onClick={() => {
+                if (window.confirm('Are you sure you want to sign out?')) signOut();
+              }}
               title={`Sign out (${user.email || 'signed in'})`}
             >
               Sign out

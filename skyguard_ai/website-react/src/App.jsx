@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotifyProvider } from './context/NotifyContext';
+import WebsiteNotifications from './components/WebsiteNotifications';
 import useReveal from './hooks/useReveal';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
@@ -30,7 +32,8 @@ function RequireAuth({ children }) {
     );
   }
   if (!user) {
-    return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
+    // Preserve query (?tab=route) so post-login redirects land on the right tab.
+    return <Navigate to="/signin" replace state={{ from: location.pathname + location.search }} />;
   }
   return children;
 }
@@ -62,10 +65,13 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <ScrollToTop />
-          <RevealOnRoute />
-          <div className="app-container">
+        <NotifyProvider>
+          <BrowserRouter>
+            <ScrollToTop />
+            <RevealOnRoute />
+            {/* Website-wide notification overlay — floats above every page/map */}
+            <WebsiteNotifications />
+            <div className="app-container">
             <Navbar />
             <main>
               <Routes>
@@ -84,6 +90,8 @@ export default function App() {
                     </RequireAuth>
                   }
                 />
+                {/* Route planner (account required). /route kept as a
+                    redirect so old links keep working. */}
                 <Route
                   path="/location"
                   element={
@@ -92,11 +100,13 @@ export default function App() {
                     </RequireAuth>
                   }
                 />
+                <Route path="/route" element={<Navigate to="/location" replace />} />
                 <Route path="*" element={<HomePage />} />
               </Routes>
             </main>
-          </div>
-        </BrowserRouter>
+            </div>
+          </BrowserRouter>
+        </NotifyProvider>
       </AuthProvider>
     </ThemeProvider>
   );

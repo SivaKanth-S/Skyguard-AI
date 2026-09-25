@@ -33,6 +33,10 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from || '/location';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'skyguard-ai-1ac3f';
+  const consoleProvidersUrl = `https://console.firebase.google.com/project/${projectId}/authentication/providers`;
+  const isProviderDisabled = error.includes('FIREBASE_PROVIDER_DISABLED');
+  const cleanError = error.replace('FIREBASE_PROVIDER_DISABLED:', '').trim();
 
   if (!loading && user) {
     return <Navigate to={from} replace />;
@@ -87,11 +91,12 @@ export default function AuthPage() {
               {mode === 'signin' ? 'Welcome back.' : 'Join the watch.'}
             </h2>
             <p>
-              Your account unlocks Live Location — real-time GPS tracking
-              against the Tamil Nadu AWS network with geofenced threat alerts.
+              Your account unlocks the Route Planner — A → B road routes
+              across the Tamil Nadu AWS network with fault-zone forecasts
+              and live GPS tracking alerts.
             </p>
             <ul className="auth-points">
-              <li><span>📍</span> Live GPS + fault-zone proximity alerts</li>
+              <li><span>📍</span> Place search + live GPS route tracking</li>
               <li><span>🚨</span> Shockwave bursts the moment faults erupt</li>
               <li><span>🔒</span> Session stays signed in on this device</li>
             </ul>
@@ -248,7 +253,22 @@ export default function AuthPage() {
                 {error && (
                   <div className="auth-error" role="alert">
                     <span>⚠️</span>
-                    <div>{error}</div>
+                    <div>
+                      <div>{isProviderDisabled ? cleanError : error}</div>
+                      {isProviderDisabled && (
+                        <div className="auth-fix">
+                          <ol>
+                            <li>Open <a href={consoleProvidersUrl} target="_blank" rel="noreferrer">Firebase Console → Authentication → Sign-in method</a></li>
+                            <li>Click <strong>Get started</strong> if asked, then enable <strong>Email/Password</strong> → <strong>Save</strong></li>
+                            <li>Also enable <strong>Google</strong> if you use “Continue with Google”</li>
+                            <li>Back here: new users click <strong>Create an account</strong> first, then Sign In</li>
+                          </ol>
+                          <a className="auth-fix-btn" href={consoleProvidersUrl} target="_blank" rel="noreferrer">
+                            Open Firebase Console →
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

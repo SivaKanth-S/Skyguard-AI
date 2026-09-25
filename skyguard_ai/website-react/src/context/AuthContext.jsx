@@ -28,13 +28,13 @@ function friendlyError(err) {
   const code = err?.code || '';
   if (code === 'auth/email-already-in-use') return 'An account with this email already exists. Try signing in instead.';
   if (code === 'auth/user-not-found' || code === 'auth/wrong-password') return 'Incorrect email or password.';
-  if (code === 'auth/invalid-credential') return 'Incorrect email or password.';
+  if (code === 'auth/invalid-credential') return 'Incorrect email or password. If you are new here, switch to Sign Up and create an account first.';
   if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
   if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
   if (code === 'auth/too-many-requests') return 'Too many attempts. Please wait a minute and try again.';
   if (code === 'auth/network-request-failed') return 'Network error. Check your connection and try again.';
-  if (code === 'auth/configuration-not-found') return 'Firebase Auth is not set up for this project yet — open Firebase console → Build → Authentication → Get started, then enable the Email/Password provider.';
-  if (code === 'auth/operation-not-allowed') return 'Email/Password sign-in is switched off — enable it under Authentication → Sign-in method in Firebase console.';
+  if (code === 'auth/configuration-not-found') return 'FIREBASE_PROVIDER_DISABLED: Firebase Authentication has no sign-in providers yet. Open Firebase console → Build → Authentication → Get started, then enable the Email/Password provider.';
+  if (code === 'auth/operation-not-allowed') return 'FIREBASE_PROVIDER_DISABLED: Email/Password sign-in is switched OFF in your Firebase project (skyguard-ai-1ac3f). Enable it under Authentication → Sign-in method, then retry. New users must use Sign Up first.';
   if (code === 'auth/popup-closed-by-user') return '';
   if (code === 'auth/unauthorized-domain') return 'This domain is not authorized — add it under Authentication → Settings → Authorized domains in Firebase console.';
   if (code === 'auth/account-exists-with-different-credential') return 'This email already uses a different sign-in method. Try the other option.';

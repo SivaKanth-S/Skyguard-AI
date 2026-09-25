@@ -1,5 +1,5 @@
 import React from 'react';
-import LocationMap from '../components/LocationMap';
+import RoutePlannerMap from '../components/RoutePlannerMap';
 
 export default function LocationPage() {
   return (
@@ -8,42 +8,43 @@ export default function LocationPage() {
       <div className="page-hero">
         <div className="wrap page-hero-row">
           <div>
-            <div className="label">Geospatial Intelligence</div>
-            <h1 className="page-title">Live Location &amp; Threat Proximity</h1>
+            <div className="label">Trip Intelligence</div>
+            <h1 className="page-title">Route Planner &amp; Anomaly Alerts</h1>
             <p className="page-desc">
-              Track your real-time GPS position across the Tamil Nadu AWS network, compute distance to sensor fault zones, and receive automated geofenced safety alerts.
+              Search a start and destination in Tamil Nadu like Google Maps —
+              get a road route across the AWS network, see which sensor fault
+              zones it crosses, and get live notifications while tracking
+              your real GPS position.
             </p>
           </div>
           <div className="live-pill">
-            <span className="pulse"></span> GPS ACTIVE
+            <span className="pulse"></span> ROUTE GUARD ACTIVE
           </div>
         </div>
       </div>
 
       <div className="page-body">
         <div className="wrap">
-          {/* THREAT LEGEND */}
           <div className="threat-legend">
             <div className="tl-row">
+              <span className="tl-dot" style={{ background: '#1a73e8' }}></span>
+              <strong>ROUTE</strong>: Your road path (A → B)
+            </div>
+            <div className="tl-row">
               <span className="tl-dot" style={{ background: '#e74c3c' }}></span>
-              <strong>THREAT</strong>: Inside active anomaly radius
-            </div>
-            <div className="tl-row">
-              <span className="tl-dot" style={{ background: '#e67e22' }}></span>
-              <strong>WARNING</strong>: Fault station within 45 km
-            </div>
-            <div className="tl-row">
-              <span className="tl-dot" style={{ background: '#f39c12' }}></span>
-              <strong>ADVISORY</strong>: Minor variance within 80 km
+              <strong>FAULT ZONE</strong>: Anomalous AWS station on your path
             </div>
             <div className="tl-row">
               <span className="tl-dot" style={{ background: '#2ecc71' }}></span>
-              <strong>CLEAR</strong>: Regional meteorological network nominal
+              <strong>CLEAR</strong>: No faults touching the route
+            </div>
+            <div className="tl-row">
+              <span className="tl-dot" style={{ background: '#58a6ff' }}></span>
+              <strong>ROAD</strong>: Esri road basemap in the layer menu
             </div>
           </div>
 
-          {/* MAIN LOCATION COMPONENT */}
-          <LocationMap />
+          <RoutePlannerMap />
         </div>
       </div>
     </div>

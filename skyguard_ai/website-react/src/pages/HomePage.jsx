@@ -84,8 +84,8 @@ export default function HomePage() {
     },
     {
       to: '/location',
-      title: 'Live Location',
-      desc: 'Track your GPS position on the sensor network and receive real-time threat alerts for anomaly zones near you.',
+      title: 'Route Planner',
+      desc: 'Search Tamil Nadu places, get road routes with fault-zone forecasts, and track your live GPS with real-time anomaly notifications.',
       grad: 'linear-gradient(135deg,#58a6ff,#0d5bdd)',
       icon: (
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">

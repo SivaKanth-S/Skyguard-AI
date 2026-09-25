@@ -404,9 +404,14 @@ export default function ProfilePage() {
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <Link to="/location" className="loc-btn primary" style={{ textDecoration: 'none' }}>
-                      Open Live Location
+                      Open Route Planner
                     </Link>
-                    <button className="loc-btn danger" onClick={() => signOut()}>
+                    <button
+                      className="loc-btn danger"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to sign out?')) signOut();
+                      }}
+                    >
                       Sign out
                     </button>
                   </div>
