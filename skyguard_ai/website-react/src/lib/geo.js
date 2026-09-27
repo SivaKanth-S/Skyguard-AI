@@ -30,19 +30,26 @@ export function formatDur(mins) {
   return r ? `${h} h ${r} min` : `${h} h`;
 }
 
-// ── Nominatim place search (OpenStreetMap, free). Tamil Nadu ONLY —
-// results are hard-bounded to the state box and filtered by state name,
-// so other states never appear.
+// ── Place search (OpenStreetMap data, free). Tamil Nadu ONLY — results are
+// bounded to the state box and filtered by state name, so other states
+// never appear. Triple fallback chain so suggestions ALWAYS show something:
+// Nominatim → Photon → built-in AWS station names (works fully offline).
 const TN_VIEWBOX = '76.05,13.55,80.35,8.07'; // left,top,right,bottom (lng/lat)
-export async function searchPlaces(query, limit = 5) {
-  const q = (query || '').trim();
-  if (q.length < 3) return [];
+const TN_BBOX_PHOTON = '76.05,8.07,80.35,13.55'; // min_lng,min_lat,max_lng,max_lat
+
+function fetchWithTimeout(url, opts = {}, ms = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
+async function searchNominatim(q, limit) {
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit * 2}` +
     `&countrycodes=in&viewbox=${TN_VIEWBOX}&bounded=1` +
     `&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Geocode HTTP ${res.status}`);
+  const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   const json = await res.json();
   return (Array.isArray(json) ? json : [])
     .filter((r) => {
@@ -53,10 +60,87 @@ export async function searchPlaces(query, limit = 5) {
     .slice(0, limit)
     .map((r) => ({
       label: r.display_name,
-      short: (r.display_name || '').split(',').slice(0, 2).join(','),
+      short: (r.display_name || '').split(',').slice(0, 2).join(',').trim() || q,
       lat: parseFloat(r.lat),
       lng: parseFloat(r.lon),
+    }))
+    .filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng));
+}
+
+async function searchPhoton(q, limit) {
+  const url =
+    `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}` +
+    `&bbox=${TN_BBOX_PHOTON}&limit=${limit * 2}&lang=en`;
+  const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
+  const json = await res.json();
+  const feats = Array.isArray(json?.features) ? json.features : [];
+  const seen = new Set();
+  return feats
+    .filter((f) => {
+      const p = f?.properties || {};
+      const state = (p.state || '').toLowerCase();
+      // Photon already constrains to the TN bbox; keep TN matches plus
+      // Indian hits with no state field rather than dropping everything.
+      if (state) return state.includes('tamil nadu');
+      return (p.country || '').toLowerCase() === 'india';
+    })
+    .map((f) => {
+      const p = f.properties || {};
+      const [lng, lat] = f.geometry?.coordinates || [];
+      const place = p.name || p.city || p.town || p.village || '';
+      const area = p.city || p.town || p.village || p.district || '';
+      const parts = [place, area, p.state || 'Tamil Nadu', p.country || 'India']
+        .map((s) => (s || '').trim())
+        .filter(Boolean)
+        .filter((s, i, a) => a.findIndex((x) => x.toLowerCase() === s.toLowerCase()) === i);
+      return {
+        label: parts.join(', '),
+        short: parts.slice(0, 2).join(', ') || q,
+        lat: +lat,
+        lng: +lng,
+      };
+    })
+    .filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lng))
+    .filter((r) => {
+      const key = `${r.label}|${r.lat.toFixed(3)},${r.lng.toFixed(3)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+// Instant offline fallback — matches the built-in AWS station cities so the
+// dropdown never comes up empty for major Tamil Nadu places.
+function searchLocalStations(q, limit) {
+  const needle = q.trim().toLowerCase();
+  return TN_STATIONS.filter(
+    (st) =>
+      st.name.toLowerCase().includes(needle) ||
+      (st.short || '').toLowerCase().includes(needle),
+  )
+    .slice(0, limit)
+    .map((st) => ({
+      label: `${st.name}, Tamil Nadu, India`,
+      short: st.short || st.name.split('—')[0].trim(),
+      lat: st.lat,
+      lng: st.lng,
     }));
+}
+
+export async function searchPlaces(query, limit = 5) {
+  const q = (query || '').trim();
+  if (q.length < 3) return [];
+  try {
+    const primary = await searchNominatim(q, limit);
+    if (primary.length) return primary;
+  } catch { /* blocked / rate-limited — try Photon */ }
+  try {
+    const fallback = await searchPhoton(q, limit);
+    if (fallback.length) return fallback;
+  } catch { /* offline — use built-in stations */ }
+  return searchLocalStations(q, limit);
 }
 
 export async function reverseGeocode(lat, lng) {

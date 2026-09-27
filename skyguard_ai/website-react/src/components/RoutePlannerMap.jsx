@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from '../context/ThemeContext';
-import { useNotify } from '../context/NotifyContext';
+import { useRoutePlanner } from '../context/RoutePlannerContext';
 import { TN_STATIONS } from '../data/stations';
 import {
   TN_BOUNDS,
@@ -15,16 +15,13 @@ import {
 } from './anomalyEffects';
 import {
   analyzeRouteAnomalies,
-  closestPointOnRoute,
   fetchRoute,
   formatDist,
   formatDur,
-  haversineKm,
   sampleAlongRoute,
   searchPlaces,
 } from '../lib/geo';
 import {
-  ensureNotifyPermission,
   notifyPermission,
   permissionHint,
   sendNotify,
@@ -128,7 +125,37 @@ function maneuverIcon(instruction = '') {
 
 export default function RoutePlannerMap() {
   const { isLight } = useTheme();
-  const { notify: siteNotify } = useNotify();
+  // ── Persistent planner state: survives page navigation + reloads (until
+  // the program/tab is closed). The Leaflet map view may unmount, but the
+  // route, inputs, alerts and GPS tracking live on in the provider. ──
+  const {
+    startText, setStartText,
+    endText, setEndText,
+    start, setStart,
+    end, setEnd,
+    mapOpened, setMapOpened,
+    route, setRoute,
+    routing, setRouting,
+    routeError, setRouteError,
+    alerts, setAlerts,
+    progressKm, setProgressKm,
+    arrived, setArrived,
+    offRoute, setOffRoute,
+    tracking,
+    gps,
+    gpsError,
+    notifyOn, setNotifyOn, notifyRef,
+    follow, setFollow, followRef,
+    stepsOpen, setStepsOpen,
+    activeTileKey: savedTileKey, setActiveTileKey,
+    faults, faultsRef,
+    analysis,
+    startTracking: startBackgroundTracking,
+    stopTracking: stopBackgroundTracking,
+    resetPlanner,
+    alertedRef, firstFix,
+  } = useRoutePlanner();
+
   const mapRef = useRef(null);
   const map = useRef(null);
   const tileLayer = useRef(null);
@@ -138,60 +165,58 @@ export default function RoutePlannerMap() {
   const userMarker = useRef(null);
   const accCircle = useRef(null);
   const stationLayers = useRef([]);
-  const alertedRef = useRef(new Set());
-  const tileInit = useRef(false);
-  const watchId = useRef(null);
-  const firstFix = useRef(true);
+  // Which tile layer is actually on the map right now. Selections apply
+  // whenever this differs — including the very first tap.
+  const attachedTileRef = useRef(null);
 
   // The one location option: search a place for start + destination.
-  const [startText, setStartText] = useState('');
-  const [endText, setEndText] = useState('');
-  const [start, setStart] = useState(null);
-  const [end, setEnd] = useState(null);
+  // Search-box UI state is view-local; start/end selections persist.
   const [suggFor, setSuggFor] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const searchSeq = useRef(0);
   // Setup-first flow: the map stays closed until the user submits a
   // start + destination (Get Route). Keeps focus on the two inputs first.
-  const [mapOpened, setMapOpened] = useState(false);
+  // mapOpened persists — returning to this page never restarts from start.
   const pendingRouteRef = useRef(null);
 
-  const [route, setRoute] = useState(null);
-  const [routing, setRouting] = useState(false);
-  const [routeError, setRouteError] = useState('');
-  const [analysis, setAnalysis] = useState({ warnings: [], advisories: [], exposedKm: 0, risk: 'CLEAR' });
-
-  // Live fault engine — same 9s rhythm as Live Location so anomalies
-  // seen here match the rest of the app. Starts empty; the engine raises
-  // live fault zones on its own (no hardcoded demo faults).
-  const faultsRef = useRef({});
-  const [faults, setFaults] = useState(faultsRef.current);
-
-  // Live GPS tracking (real device position — no simulation).
-  const [tracking, setTracking] = useState(false);
-  const [gps, setGps] = useState(null); // { lat, lng, acc, speedKmh }
-  const [gpsError, setGpsError] = useState('');
-  const [alerts, setAlerts] = useState([]); // notified alert history
-  const [progressKm, setProgressKm] = useState(0); // closest route km to GPS
-  const [arrived, setArrived] = useState(false);
-  const [offRoute, setOffRoute] = useState(false);
-  const followRef = useRef(true);
-  const [activeTileKey, setActiveTileKey] = useState(isLight ? 'streets' : 'dark');
   const [layerOpen, setLayerOpen] = useState(false);
-  const [follow, setFollow] = useState(true);
-  useEffect(() => { followRef.current = follow; }, [follow]);
-  const [stepsOpen, setStepsOpen] = useState(false);
+  // Fullscreen maximize / minimize — view-local (resets with the map view).
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const toggleMapSize = () => setMapExpanded((v) => !v);
+
+  // After (un)maximizing: re-fit Leaflet tiles, lock page scroll, ESC exits.
+  useEffect(() => {
+    if (!mapOpened) return;
+    const t = setTimeout(() => { try { if (map.current) map.current.invalidateSize(); } catch {} }, 80);
+    if (!mapExpanded) return () => clearTimeout(t);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') setMapExpanded(false); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mapExpanded, mapOpened]);
   // System notifications for every alert/fault (replaces voice alerts).
-  const [notifyOn, setNotifyOn] = useState(true);
   const [notifyPerm, setNotifyPerm] = useState(() => notifyPermission());
   const notifyHint = notifyOn ? permissionHint(notifyPerm) : '🔕 Notifications off — turn on to get alerts on your device.';
-  const notifyRef = useRef(notifyOn);
-  useEffect(() => { notifyRef.current = notifyOn; }, [notifyOn]);
+  const activeTileKey = savedTileKey || (isLight ? 'streets' : 'dark');
 
   const totalKm = route?.distanceKm || 0;
 
-  // ── map init — runs only after start+end are submitted (map opens) ──
+  // ── map init — runs when the planner is opened. The map VIEW may mount
+  // and unmount on navigation, but the planner state persists: a restored
+  // (persisted) route is redrawn immediately so the page never restarts. ──
+  const liveRouteRef = useRef(null);
+  const liveStartRef = useRef(null);
+  const liveEndRef = useRef(null);
+  liveRouteRef.current = route;
+  liveStartRef.current = start;
+  liveEndRef.current = end;
+
   useEffect(() => {
     if (!mapOpened) return;
     if (!mapRef.current || map.current) return;
@@ -200,7 +225,8 @@ export default function RoutePlannerMap() {
       minZoom: TN_MIN_ZOOM, maxBounds: TN_BOUNDS, maxBoundsViscosity: 1.0,
     });
     map.current = m;
-    attachTiles(m, isLight ? 'streets' : 'dark');
+    attachTiles(m, activeTileKey);
+    attachedTileRef.current = activeTileKey;
     setTimeout(() => { try { m.invalidateSize(); } catch {} }, 250);
     m.on('zoomend', () => {
       if (m.getZoom() < TN_MIN_ZOOM) { try { m.setZoom(TN_MIN_ZOOM); } catch {} }
@@ -213,10 +239,26 @@ export default function RoutePlannerMap() {
       try {
         m.fitBounds(L.latLngBounds(r.coords.map(([la, ln]) => [la, ln])).pad(0.15));
       } catch {}
+    } else if (liveRouteRef.current && liveStartRef.current && liveEndRef.current) {
+      // Restored session (navigated back / reloaded): redraw persisted route.
+      const r = liveRouteRef.current;
+      drawRoute(r, liveStartRef.current, liveEndRef.current);
+      try {
+        m.fitBounds(L.latLngBounds(r.coords.map(([la, ln]) => [la, ln])).pad(0.15));
+      } catch {}
     }
     return () => {
+      // Only the Leaflet view is torn down — route + tracking persist.
       try { m.remove(); } catch {}
       map.current = null;
+      tileLayer.current = null;
+      routeLayers.current = [];
+      startMarker.current = null;
+      endMarker.current = null;
+      userMarker.current = null;
+      accCircle.current = null;
+      stationLayers.current = [];
+      attachedTileRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapOpened]);
@@ -242,55 +284,70 @@ export default function RoutePlannerMap() {
     tileLayer.current = layer.addTo(m);
   }
 
-  useEffect(() => { setActiveTileKey(isLight ? 'streets' : 'dark'); }, [isLight]);
+  // Default tile follows the theme until the user picks a layer explicitly
+  // (the explicit pick persists across pages via context).
+  useEffect(() => {
+    if (!savedTileKey) setActiveTileKey(isLight ? 'streets' : 'dark');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLight]);
+  // Every layer-menu tap applies immediately when it differs from what is
+  // actually attached (no skipped first tap). Also re-syncs after remounts.
   useEffect(() => {
     if (!map.current) return;
-    if (!tileInit.current) { tileInit.current = true; return; }
+    if (attachedTileRef.current === activeTileKey) return;
     attachTiles(map.current, activeTileKey);
+    attachedTileRef.current = activeTileKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTileKey]);
+  }, [activeTileKey, mapOpened]);
 
-  // ── live faults ──
-  useEffect(() => {
-    const id = setInterval(() => {
-      const prev = { ...faultsRef.current };
-      // age out randomly to keep 1–2 active zones
-      const ids = Object.keys(prev);
-      if (ids.length >= 2 && Math.random() < 0.5) delete prev[ids[(Math.random() * ids.length) | 0]];
-      if (Object.keys(prev).length < 2 && Math.random() < 0.7) {
-        const cands = TN_STATIONS.filter((s) => !(s.id in prev));
-        if (cands.length) {
-          const st = cands[(Math.random() * cands.length) | 0];
-          const roll = Math.random();
-          const status = roll < 0.35 ? 'CRITICAL' : roll < 0.7 ? 'FAULT' : 'DEGRADED';
-          const pool = status === 'CRITICAL' ? ['spike', 'oor', 'missing'] : status === 'FAULT' ? ['freeze', 'multi', 'noise'] : ['drift', 'noise'];
-          prev[st.id] = { status, faultType: pool[(Math.random() * pool.length) | 0] };
-        }
-      }
-      faultsRef.current = prev;
-      setFaults({ ...prev });
-    }, 9000);
-    return () => clearInterval(id);
-  }, []);
+  // NOTE: live fault engine + route analysis now live in
+  // RoutePlannerContext so they keep running while other pages are open.
 
   // Place search (single location option) — type to find start/destination.
+  // Debounced: geocoders allow ~1 req/sec, so one request fires per pause in
+  // typing instead of one per keystroke (which gets rate-limited → empty list).
+  const searchTimer = useRef(null);
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
+
+  const runSearch = (field, text) => {
+    const query = (text || '').trim();
+    const mySeq = ++searchSeq.current;
+    if (searchTimer.current) { clearTimeout(searchTimer.current); searchTimer.current = null; }
+    if (query.length < 3) { setSuggestions([]); setSuggFor(null); setSearching(false); return; }
+    setSuggFor(field);
+    setSearching(true);
+    searchTimer.current = setTimeout(() => {
+      searchTimer.current = null;
+      searchPlaces(query, 5)
+        .then((list) => { if (searchSeq.current === mySeq) setSuggestions(list); })
+        .catch(() => { if (searchSeq.current === mySeq) setSuggestions([]); })
+        .finally(() => { if (searchSeq.current === mySeq) setSearching(false); });
+    }, 450);
+  };
+
   const onType = (field, text) => {
     if (field === 'start') setStartText(text); else setEndText(text);
     if (field === 'start' && start) setStart(null);
     if (field === 'end' && end) setEnd(null);
-    const mySeq = ++searchSeq.current;
-    if (text.trim().length < 3) { setSuggestions([]); setSuggFor(null); setSearching(false); return; }
-    setSearching(true); setSuggFor(field);
-    searchPlaces(text, 5)
-      .then((list) => { if (searchSeq.current === mySeq) setSuggestions(list); })
-      .catch(() => { if (searchSeq.current === mySeq) setSuggestions([]); })
-      .finally(() => { if (searchSeq.current === mySeq) setSearching(false); });
+    runSearch(field, text);
+  };
+
+  // Focusing a field with text re-opens its suggestions (never shows the
+  // other field's stale list). Doesn't clear an already-picked point.
+  const focusSearch = (field, text) => {
+    if ((text || '').trim().length < 3) return;
+    if (suggFor !== field) runSearch(field, text);
   };
 
   const pickSuggestion = (field, s) => {
+    if (searchTimer.current) { clearTimeout(searchTimer.current); searchTimer.current = null; }
+    searchSeq.current += 1; // invalidate any in-flight request
     const pt = { lat: s.lat, lng: s.lng, label: s.label };
     if (field === 'start') { setStart(pt); setStartText(s.short); }
     else { setEnd(pt); setEndText(s.short); }
+    setSearching(false);
     setSuggFor(null); setSuggestions([]);
   };
 
@@ -300,7 +357,7 @@ export default function RoutePlannerMap() {
     setStartText(endText); setEndText(startText);
   };
 
-  // ── route ──
+  // ── route (planner state persists across pages — never auto-cleared) ──
   const planRoute = async (s = start, e = end) => {
     setRouteError('');
     if (!s || !e) { setRouteError('Search and choose a start and a destination above first.'); return; }
@@ -308,7 +365,8 @@ export default function RoutePlannerMap() {
     setRouting(true);
     try {
       const r = await fetchRoute(s, e);
-      stopTracking(true);
+      stopBackgroundTracking();
+      clearLiveMarkers();
       setAlerts([]);
       setProgressKm(0);
       setArrived(false);
@@ -352,6 +410,7 @@ export default function RoutePlannerMap() {
   };
 
   // Delete the locked route (user-confirmed) — closes the map, back to setup.
+  // This is the ONLY place the planner is cleared: navigation never clears it.
   const deleteRoute = () => {
     if (!window.confirm('Delete this route and close the map? Tracking will stop.')) return;
     removeRoute();
@@ -359,14 +418,15 @@ export default function RoutePlannerMap() {
 
   // Silent core: drop route + tracking + map, back to the setup form.
   function removeRoute() {
-    stopTracking(true);
-    setRoute(null);
-    setAlerts([]);
-    setProgressKm(0);
-    setArrived(false);
-    setOffRoute(false);
-    alertedRef.current = new Set();
-    setMapOpened(false);
+    stopBackgroundTracking();
+    clearLiveMarkers();
+    resetPlanner();
+  }
+
+  function clearLiveMarkers() {
+    if (!map.current) return;
+    if (userMarker.current) { try { map.current.removeLayer(userMarker.current); } catch {} userMarker.current = null; }
+    if (accCircle.current) { try { map.current.removeLayer(accCircle.current); } catch {} accCircle.current = null; }
   }
 
   // Delete a single location (✕ in the A/B field). Works even when the
@@ -377,6 +437,9 @@ export default function RoutePlannerMap() {
       if (!window.confirm('Clearing this location will delete the current route and stop tracking. Continue?')) return;
       removeRoute();
     }
+    if (searchTimer.current) { clearTimeout(searchTimer.current); searchTimer.current = null; }
+    searchSeq.current += 1; // invalidate any in-flight request
+    setSearching(false);
     if (field === 'start') { setStart(null); setStartText(''); }
     else { setEnd(null); setEndText(''); }
     setSuggFor(null);
@@ -399,12 +462,7 @@ export default function RoutePlannerMap() {
     routeLayers.current = [casing, main];
   }
 
-  // analysis whenever route or faults change
-  useEffect(() => {
-    if (!route) { setAnalysis({ warnings: [], advisories: [], exposedKm: 0, risk: 'CLEAR' }); return; }
-    const sampled = sampleAlongRoute(route.coords, 2);
-    setAnalysis(analyzeRouteAnomalies(sampled, faults));
-  }, [route, faults]);
+  // Route analysis comes from RoutePlannerContext (keeps running on other pages).
 
   // ── stations on map ──
   useEffect(() => {
@@ -444,110 +502,33 @@ export default function RoutePlannerMap() {
   }, [faults, analysis.warnings, mapOpened]);
 
   // ── live GPS tracking (real device position — no simulation) ──
-  // Every alert goes to the website-wide floating overlay (+ system
-  // notification) — nothing pops up trapped inside the map.
-  const KIND_SEV = { info: 'info', success: 'success', advisory: 'warning', medium: 'warning', high: 'warning', critical: 'critical' };
-  function pushAlert(kind, title, detail, atKm) {
-    if (notifyRef.current) {
-      siteNotify({
-        severity: KIND_SEV[kind] || 'info',
-        title: `SkyGuard AI — ${title}`,
-        detail: atKm != null ? `${detail} (route km ${(+atKm).toFixed(1)})` : detail,
-        tag: `skyguard-${kind}`,
-      });
-    }
-    setAlerts((log) => [{
-      id: Date.now() + Math.random(), kind, title, detail,
-      atKm: atKm != null ? +(+atKm).toFixed(1) : null,
-      time: new Date().toLocaleTimeString(),
-    }, ...log].slice(0, 30));
-  }
-
-  function stopTracking(removeMarker = false) {
-    if (watchId.current != null) {
-      try { navigator.geolocation.clearWatch(watchId.current); } catch { /* noop */ }
-      watchId.current = null;
-    }
-    if (removeMarker && map.current) {
-      if (userMarker.current) { try { map.current.removeLayer(userMarker.current); } catch {} userMarker.current = null; }
-      if (accCircle.current) { try { map.current.removeLayer(accCircle.current); } catch {} accCircle.current = null; }
-    }
-    setTracking(false);
-    setGps(null);
-  }
-
-  // Stop the GPS watch when leaving the page/tab.
-  useEffect(() => () => {
-    if (watchId.current != null) {
-      try { navigator.geolocation.clearWatch(watchId.current); } catch { /* noop */ }
-      watchId.current = null;
-    }
-  }, []);
+  // The watch + route evaluation live in RoutePlannerContext so tracking
+  // keeps running while the user browses other pages. Here we only render
+  // the live marker and handle Start/Stop buttons + permission UI.
+  // NOTE: there is intentionally NO unmount cleanup clearing the GPS watch —
+  // leaving this page must not stop tracking. Only explicit Stop / Delete
+  // stops it.
 
   const startTracking = async () => {
     if (!route || tracking) return;
-    setGpsError('');
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported on this device — tracking needs GPS.');
-      return;
-    }
-    // Ask for notification permission on Start (user gesture) so every
-    // alert/fault pops up on the screen.
-    if (notifyRef.current) {
-      try { setNotifyPerm(await ensureNotifyPermission()); } catch { /* keep current */ }
-    }
-    alertedRef.current = new Set();
-    firstFix.current = true;
-    setFollow(true);
-    setArrived(false);
-    setOffRoute(false);
-    setProgressKm(0);
-    try {
-      watchId.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          setGpsError('');
-          const { latitude, longitude, accuracy, speed } = pos.coords;
-          setGps({
-            lat: +latitude.toFixed(5),
-            lng: +longitude.toFixed(5),
-            acc: Math.round(accuracy || 20),
-            speedKmh: speed != null && speed >= 0 ? +(speed * 3.6).toFixed(1) : null,
-          });
-        },
-        (err) => {
-          if (err?.code === 1) setGpsError('Location permission denied — allow location access, then press Start Tracking again.');
-          else setGpsError('Waiting for GPS fix… stay outdoors with a clear sky view.');
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
-      );
-      setTracking(true);
-      pushAlert(
-        'info',
-        'Tracking started',
-        analysis.warnings.length
-          ? `Live GPS on. Caution: ${analysis.warnings.length} fault zone${analysis.warnings.length === 1 ? '' : 's'} on this route.`
-          : 'Live GPS on. Route is clear of known fault zones.',
-        null,
-      );
-    } catch {
-      setGpsError('Could not start GPS tracking on this device.');
+    const ok = await startBackgroundTracking();
+    // Refresh the permission hint after the user-gesture permission prompt.
+    try { setNotifyPerm(notifyPermission()); } catch { /* keep current */ }
+    if (!ok) {
+      try { setNotifyPerm(notifyPermission()); } catch { /* keep current */ }
     }
   };
 
-  function fireAnomalyAlert(st, distKm, atKm) {
-    const fm = faultMeta(st.faultType, st.status);
-    // No in-map popups — real on-screen notification + history entry only.
-    pushAlert(
-      st.severity,
-      `${st.station} — ${fm.label}`,
-      `You are inside its ${TN_STATIONS.find((x) => x.id === st.stationId)?.coverage_km} km fault radius. Drive carefully — sensor data here is unreliable.`,
-      atKm,
-    );
-  }
+  const stopTracking = () => {
+    stopBackgroundTracking();
+    clearLiveMarkers();
+  };
 
-  // Every GPS fix: move the live marker, follow, and evaluate the route.
+  // Every GPS fix: move the live marker + follow. Route evaluation
+  // (progress / off-route / fault alerts / arrival) runs headless in the
+  // provider so it keeps working on other pages without a map.
   useEffect(() => {
-    if (!tracking || !route || !gps || !map.current) return;
+    if (!tracking || !gps || !map.current) return;
     const m = map.current;
     // Live position marker + accuracy circle.
     if (!userMarker.current) {
@@ -569,46 +550,8 @@ export default function RoutePlannerMap() {
     } else if (followRef.current) {
       try { m.panTo([gps.lat, gps.lng], { animate: false }); } catch { /* keep view */ }
     }
-    // Ignore wildly inaccurate fixes for route evaluation.
-    if (gps.acc > 200) return;
-    const c = closestPointOnRoute(route.coords, gps.lat, gps.lng);
-    if (!c) return;
-    setProgressKm(c.km);
-    // Off-route / back-on-route (route itself never changes).
-    if (c.distKm > 1) {
-      if (!offRoute) {
-        setOffRoute(true);
-        pushAlert('high', 'Off route', `You are ${c.distKm.toFixed(1)} km away from the blue route. Return to it to resume guidance — the route itself is unchanged.`, c.km);
-      }
-    } else if (offRoute) {
-      setOffRoute(false);
-      pushAlert('info', 'Back on route', 'Guidance resumed along the planned route.', c.km);
-    }
-    // Fault zones along the route (real on-screen notification each).
-    [...analysis.warnings, ...analysis.advisories].forEach((w) => {
-      if (alertedRef.current.has(w.stationId)) return;
-      const st = TN_STATIONS.find((x) => x.id === w.stationId);
-      if (!st) return;
-      const d = haversineKm(gps.lat, gps.lng, st.lat, st.lng);
-      if (d <= st.coverage_km) {
-        alertedRef.current.add(w.stationId);
-        fireAnomalyAlert(w, d, c.km);
-      } else if (d <= 5 && w.severity !== 'advisory' && !alertedRef.current.has(`near-${w.stationId}`)) {
-        alertedRef.current.add(`near-${w.stationId}`);
-        const fm = faultMeta(w.faultType, w.status);
-        pushAlert('advisory', `Approaching ${w.short} fault zone`, `${fm.label} ${d.toFixed(1)} km ahead — stay alert.`, c.km);
-      }
-    });
-    // Arrival at destination.
-    if (!arrived && end) {
-      const dEnd = haversineKm(gps.lat, gps.lng, end.lat, end.lng);
-      if (dEnd <= 0.5) {
-        setArrived(true);
-        pushAlert('info', 'Arrived', 'You reached your destination. Tracking continues until you stop it.', c.km);
-      }
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gps]);
+  }, [gps, tracking, mapOpened]);
 
   const resetView = () => {
     const m = map.current;
@@ -649,7 +592,7 @@ export default function RoutePlannerMap() {
                 placeholder="Search starting place in Tamil Nadu…"
                 disabled={!!route}
                 onChange={(e) => onType('start', e.target.value)}
-                onFocus={() => { if (startText.trim().length >= 3) setSuggFor('start'); }}
+                onFocus={() => focusSearch('start', startText)}
               />
               {(start || startText) && (
                 <button className="route-clear" title="Delete start location" onClick={() => clearField('start')}>✕</button>
@@ -663,7 +606,7 @@ export default function RoutePlannerMap() {
                 placeholder="Search destination place in Tamil Nadu…"
                 disabled={!!route}
                 onChange={(e) => onType('end', e.target.value)}
-                onFocus={() => { if (endText.trim().length >= 3) setSuggFor('end'); }}
+                onFocus={() => focusSearch('end', endText)}
               />
               {(end || endText) && (
                 <button className="route-clear" title="Delete destination" onClick={() => clearField('end')}>✕</button>
@@ -799,11 +742,12 @@ export default function RoutePlannerMap() {
 
         {/* ── Map (appears only after start + end are submitted) ── */}
         {mapOpened && (
-        <div className="route-map-wrap">
+        <div className={`route-map-wrap${mapExpanded ? ' expanded' : ''}`}>
           <div id="routeMap" ref={mapRef} />
 
           <div className="map-controls-group">
-            <div className="map-layer-dropdown">
+            {/* .open drives the CSS that makes the flyout visible + tappable */}
+            <div className={`map-layer-dropdown${layerOpen ? ' open' : ''}`}>
               <button className="map-layer-btn" onClick={() => setLayerOpen((v) => !v)} title="Switch map layer">
                 <span className="map-layer-icon">{LAYER_ICON[activeTileKey]}</span>
                 <span className="map-layer-label">{buildLayerDefs()[activeTileKey]?.name || 'Layer'}</span>
@@ -822,6 +766,17 @@ export default function RoutePlannerMap() {
                 </div>
               )}
             </div>
+            <button className="map-compass-btn" title={mapExpanded ? 'Minimize map' : 'Maximize map'} onClick={toggleMapSize}>
+              {mapExpanded ? (
+                <svg className="compass-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg className="compass-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
             <button className="map-compass-btn" title="Fit route / reset view" onClick={resetView}>
               <svg className="compass-icon-svg" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="18" cy="18" r="15" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 2" opacity="0.6" />

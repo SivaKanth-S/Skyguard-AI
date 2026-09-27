@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from '../context/ThemeContext';
+import { useAnomaly } from '../context/AnomalyContext';
 import { TN_STATIONS } from '../data/stations';
 import {
   BURST_COOLDOWN_MS,
@@ -92,13 +93,9 @@ export default function LocationMap() {
   const [activeTileKey, setActiveTileKey] = useState(isLight ? 'streets' : 'dark');
   const [layerDropdownOpen, setLayerDropdownOpen] = useState(false);
   const tileInitRef = useRef(false);
-  // Automatic fault engine — same 9s rhythm / 3-cycle lifetime as the
-  // dashboard engine, seeded with the same Trichy + Salem fault zones.
-  const autoFaultsRef = useRef({
-    3: { status: 'CRITICAL', cycles: 0, faultType: 'spike' },
-    4: { status: 'FAULT', cycles: 0, faultType: 'freeze' },
-  });
-  const [autoFaults, setAutoFaults] = useState(autoFaultsRef.current);
+  // Shared live anomalies — the SAME fault zones the dashboard and route
+  // planner show (single global engine in AnomalyContext).
+  const { anomalies: autoFaults } = useAnomaly();
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
@@ -287,53 +284,11 @@ export default function LocationMap() {
     };
   }, []);
 
-  // Automatic fault engine: faults raise themselves on healthy stations,
-  // age, and self-heal — threat escalation fires the shared burst + HUD.
-  useEffect(() => {
-    const id = setInterval(() => {
-      const prev = autoFaultsRef.current || {};
-      const next = {};
-      let dirty = false;
+  // NOTE: fault zones come from the shared global engine (AnomalyContext) —
+  // identical to the dashboard + route planner readings. Threat escalation
+  // below fires the shared burst + HUD from those shared transitions.
 
-      Object.entries(prev).forEach(([sid, f]) => {
-        const age = (f?.cycles ?? 0) + 1;
-        if (age < 3) {
-          next[sid] = { status: f.status, cycles: age, faultType: f.faultType };
-          dirty = true;
-        } else {
-          dirty = true; // a fault just self-healed
-        }
-      });
-
-      const activeCount = Object.keys(next).length;
-      if (activeCount < 2 && Math.random() < 0.6) {
-        const candidates = TN_STATIONS.filter(st => !(st.id in next));
-        if (candidates.length) {
-          const st = candidates[(Math.random() * candidates.length) | 0];
-          // Fault type follows the severity, like the dashboard engine —
-          // all 7 anomaly types occur: spike/oor/missing → CRITICAL,
-          // freeze/multi/noise → FAULT, drift/noise → DEGRADED.
-          const roll = Math.random();
-          const status = roll < 0.35 ? 'CRITICAL' : roll < 0.7 ? 'FAULT' : 'DEGRADED';
-          const pool =
-            status === 'CRITICAL' ? ['spike', 'oor', 'missing']
-            : status === 'FAULT' ? ['freeze', 'multi', 'noise']
-            : ['drift', 'noise'];
-          const faultType = pool[(Math.random() * pool.length) | 0];
-          next[st.id] = { status, cycles: 0, faultType };
-          dirty = true;
-        }
-      }
-
-      if (dirty) {
-        autoFaultsRef.current = next;
-        setAutoFaults(next);
-      }
-    }, 9000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Recalculate nearby stations & threat score on move or auto-fault change
+  // Recalculate nearby stations & threat score on move or anomaly change
   useEffect(() => {
     const list = TN_STATIONS.map((st) => {
       const dist = haversineDistance(coords.lat, coords.lng, st.lat, st.lng);

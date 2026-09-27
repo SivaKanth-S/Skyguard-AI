@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Chart from 'chart.js/auto';
 import { useTheme } from '../context/ThemeContext';
+import { useAnomaly } from '../context/AnomalyContext';
 import { TN_STATIONS, fetchLiveWeatherForStations } from '../data/stations';
+import { isAnomalyStatus } from '../components/anomalyEffects';
 import StationMap from '../components/StationMap';
-
-// Autonomous engine tuning — mirrors the location map's auto-fault rhythm.
-const ENGINE_INTERVAL_MS = 9000;
-const MAX_AUTO_FAULTS = 3;
-const FAULT_LIFETIME_CYCLES = 3;
 
 const FAULT_TYPES = [
   {
@@ -51,11 +48,9 @@ export default function DashboardPage() {
   const { isLight } = useTheme();
   const [selectedStationId, setSelectedStationId] = useState(0);
   const [liveWeather, setLiveWeather] = useState({});
-  // Seeded to match the initial detection log + the location map's fault zones.
-  const [stationStates, setStationStates] = useState({
-    3: { status: 'CRITICAL', activeAnomaly: 'spike', conf: 0.42, cycles: 0 },
-    4: { status: 'FAULT', activeAnomaly: 'freeze', conf: 0.42, cycles: 0 },
-  });
+  // Shared live anomalies — THE SAME fault zones the route planner shows.
+  // One global engine (AnomalyContext) feeds every map, so readings match.
+  const { anomalies: stationStates } = useAnomaly();
   const [timeSeriesData, setTimeSeriesData] = useState([]);
   const [anomalyLogs, setAnomalyLogs] = useState([
     {
@@ -89,76 +84,62 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // Refs mirror state for the interval engine (avoids stale closures).
-  const stationStatesRef = useRef({});
+  // Ref mirror for live weather (used by the log-diff below).
   const liveWeatherRef = useRef({});
-  useEffect(() => { stationStatesRef.current = stationStates; }, [stationStates]);
   useEffect(() => { liveWeatherRef.current = liveWeather; }, [liveWeather]);
 
-  // Autonomous anomaly-detection engine — faults raise themselves, age, and
-  // self-heal. StationMap fires its shockwave burst + HUD automatically from
-  // stationStates transitions. Replaces the old manual injection sandbox.
+  // Detection log follows the SHARED engine: diff previous vs current fault
+  // zones and log raises + recoveries. Mount initializes silently (no
+  // catch-up spam for faults raised while another page was open).
+  // StationMap fires its shockwave burst + HUD automatically from the same
+  // shared transitions.
+  const prevAnomRef = useRef(null);
   useEffect(() => {
-    const id = setInterval(() => {
-      const prev = stationStatesRef.current || {};
-      const live = liveWeatherRef.current || {};
-      const next = { ...prev };
-      const events = [];
-      const now = new Date().toLocaleTimeString();
-      let dirty = false;
+    if (prevAnomRef.current === null) {
+      prevAnomRef.current = stationStates;
+      return;
+    }
+    const prev = prevAnomRef.current || {};
+    const live = liveWeatherRef.current || {};
+    const events = [];
+    const now = new Date().toLocaleTimeString();
 
-      // 1. Age active faults; self-heal past their lifetime.
-      Object.entries(next).forEach(([sid, s]) => {
-        if (!s || s.status === 'HEALTHY') return;
-        const age = (s.cycles ?? 0) + 1;
-        if (age >= FAULT_LIFETIME_CYCLES) {
-          const st = TN_STATIONS.find(x => x.id === Number(sid));
-          const name = st?.name ?? `Station ${sid}`;
-          next[sid] = { status: 'HEALTHY', activeAnomaly: null, conf: 0.985 };
-          events.push({
-            time: now,
-            station: name,
-            type: 'RECOVERY',
-            sev: 'HEALTHY',
-            msg: `Station ${name} telemetry normalized. Self-healing imputation complete. All checks green.`,
-            action: 'Normal operational stream restored.',
-          });
-        } else {
-          next[sid] = { ...s, cycles: age };
-        }
-        dirty = true;
+    Object.entries(stationStates).forEach(([sid, s]) => {
+      if (!s || !isAnomalyStatus(s.status)) return;
+      if (isAnomalyStatus(prev[sid]?.status)) return; // already logged
+      const st = TN_STATIONS.find(x => x.id === Number(sid));
+      const f = FAULT_TYPES.find(t => t.type === s.faultType) || FAULT_TYPES[0];
+      const baseT = live[sid]?.t ?? st?.t ?? 0;
+      events.push({
+        time: now,
+        station: st?.name ?? `Station ${sid}`,
+        type: (s.faultType || 'anomaly').toUpperCase(),
+        sev: s.status,
+        msg: f.msg(st?.name ?? `Station ${sid}`, baseT),
+        action: f.action,
       });
+    });
 
-      // 2. Raise a new fault on a healthy station (capped concurrency).
-      const activeCount = Object.values(next).filter(s => s?.status && s.status !== 'HEALTHY').length;
-      if (activeCount < MAX_AUTO_FAULTS && Math.random() < 0.6) {
-        const candidates = TN_STATIONS.filter(st => (next[st.id]?.status || 'HEALTHY') === 'HEALTHY');
-        if (candidates.length) {
-          const st = candidates[(Math.random() * candidates.length) | 0];
-          const f = FAULT_TYPES[(Math.random() * FAULT_TYPES.length) | 0];
-          const baseT = live[st.id]?.t ?? st.t;
-          next[st.id] = { status: f.status, activeAnomaly: f.type, conf: f.conf, cycles: 0 };
-          events.push({
-            time: now,
-            station: st.name,
-            type: f.type.toUpperCase(),
-            sev: f.status,
-            msg: f.msg(st.name, baseT),
-            action: f.action,
-          });
-          dirty = true;
-        }
-      }
+    Object.entries(prev).forEach(([sid, s]) => {
+      if (!s || !isAnomalyStatus(s.status)) return;
+      if (isAnomalyStatus(stationStates[sid]?.status)) return; // still active
+      const st = TN_STATIONS.find(x => x.id === Number(sid));
+      const name = st?.name ?? `Station ${sid}`;
+      events.push({
+        time: now,
+        station: name,
+        type: 'RECOVERY',
+        sev: 'HEALTHY',
+        msg: `Station ${name} telemetry normalized. Self-healing imputation complete. All checks green.`,
+        action: 'Normal operational stream restored.',
+      });
+    });
 
-      if (dirty) {
-        setStationStates(next);
-        if (events.length) {
-          setAnomalyLogs(prevLogs => [...events, ...prevLogs].slice(0, 15));
-        }
-      }
-    }, ENGINE_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+    prevAnomRef.current = stationStates;
+    if (events.length) {
+      setAnomalyLogs(prevLogs => [...events, ...prevLogs].slice(0, 15));
+    }
+  }, [stationStates]);
 
   // Selected station object
   const currentSt = TN_STATIONS.find(s => s.id === selectedStationId) || TN_STATIONS[0];
@@ -168,7 +149,7 @@ export default function DashboardPage() {
     temp: currentSt.t,
     pres: currentSt.p,
     hum: currentSt.h,
-    activeAnomaly: null,
+    faultType: null,
   };
 
   // Generate mock time-series when station changes or an auto fault is detected
@@ -182,17 +163,17 @@ export default function DashboardPage() {
       let t = baseTemp + Math.sin(i / 3) * 1.5 + (Math.random() - 0.5) * 0.4;
       let p = basePres + Math.cos(i / 3) * 0.8 + (Math.random() - 0.5) * 0.3;
 
-      if (currentState.activeAnomaly === 'spike' && i === points - 1) {
+      if (currentState.faultType === 'spike' && i === points - 1) {
         t = 72.4;
-      } else if (currentState.activeAnomaly === 'oor' && i === points - 1) {
+      } else if (currentState.faultType === 'oor' && i === points - 1) {
         t = 76.0;
-      } else if (currentState.activeAnomaly === 'freeze' && i > points - 6) {
+      } else if (currentState.faultType === 'freeze' && i > points - 6) {
         t = baseTemp;
-      } else if (currentState.activeAnomaly === 'noise') {
+      } else if (currentState.faultType === 'noise') {
         t += (Math.random() - 0.5) * 9; // EMI jitter across the window
-      } else if (currentState.activeAnomaly === 'missing' && i > points - 4) {
+      } else if (currentState.faultType === 'missing' && i > points - 4) {
         t = null; // communication gap at the tail
-      } else if (currentState.activeAnomaly === 'multi' && i === points - 1) {
+      } else if (currentState.faultType === 'multi' && i === points - 1) {
         t = baseTemp + 18; // physically inconsistent hot reading
       }
 
@@ -200,7 +181,7 @@ export default function DashboardPage() {
     });
 
     setTimeSeriesData(data);
-  }, [selectedStationId, currentState.activeAnomaly, liveWeather]);
+  }, [selectedStationId, currentState.faultType, liveWeather]);
 
   // Live telemetry stream — one real reading every 2s from live weather +
   // sensor jitter (fault-aware: spikes, gaps, and freezes show up live),
@@ -214,7 +195,7 @@ export default function DashboardPage() {
       const st = TN_STATIONS.find(s => s.id === selectedStationId) || TN_STATIONS[0];
       const base = liveWeather[selectedStationId] || {};
       const state = stationStates[selectedStationId] || {};
-      const a = state.activeAnomaly;
+      const a = state.faultType;
       let t = (base.t ?? st.t) + (Math.random() - 0.5) * 0.5;
       const p = (base.p ?? st.p) + (Math.random() - 0.5) * 0.3;
       if (a === 'missing') {

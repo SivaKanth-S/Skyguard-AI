@@ -2084,6 +2084,9 @@ img.leaflet-tile.dark-cyber-tile {
   .route-nav-banner { top: auto; bottom: 86px; }
 }
 .route-map-wrap { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: var(--surface); min-height: 560px; }
+/* Maximized map: fullscreen overlay above the page, below notifications */
+.route-map-wrap.expanded { position: fixed; inset: 0; z-index: 5000; border-radius: 0; border: none; min-height: 0; }
+.route-map-wrap.expanded #routeMap { height: 100vh; height: 100dvh; }
 /* Setup-first: route form is a single centered card until the map opens */
 .route-layout.setup { grid-template-columns: 1fr; max-width: 640px; margin: 0 auto; }
 .route-layout.setup .route-panel { padding: 26px 26px 22px; box-shadow: var(--shadow); }

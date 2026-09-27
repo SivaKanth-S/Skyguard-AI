@@ -64,7 +64,7 @@ function buildTiles() {
       attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
       subdomains: 'abc',
       maxZoom: 19,
-      name: 'OSM Backup'
+      name: 'OSM'
     }
   };
 }
@@ -309,7 +309,7 @@ export default function StationMap({
         burstCooldownRef.current[st.id] = t;
         // Fault-specific effect: spike / freeze / drift / out-of-range each
         // get their own burst color, reticle, badge, and HUD styling.
-        const faultType = stationStates[st.id]?.activeAnomaly ?? null;
+        const faultType = stationStates[st.id]?.faultType ?? null;
         const fm = faultMeta(faultType, next);
         const map = leafletMap.current;
         if (map) {
@@ -579,7 +579,8 @@ export default function StationMap({
 
         {/* LAYER SELECTOR & COMPASS */}
         <div className="map-controls-group">
-          <div className="map-layer-dropdown">
+          {/* .open drives the CSS that makes the flyout visible + tappable */}
+          <div className={`map-layer-dropdown${layerDropdownOpen ? ' open' : ''}`}>
             <button
               className="map-layer-btn"
               onClick={() => setLayerDropdownOpen(!layerDropdownOpen)}
@@ -622,7 +623,7 @@ export default function StationMap({
                   className={`map-layer-option ${activeTileKey === 'osm' ? 'active' : ''}`}
                   onClick={() => { setActiveTileKey('osm'); setLayerDropdownOpen(false); }}
                 >
-                  🗺️ OSM Backup
+                  🗺️ OSM
                 </button>
               </div>
             )}
