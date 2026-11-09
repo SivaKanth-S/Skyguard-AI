@@ -29,7 +29,7 @@ function friendlyError(err) {
   if (code === 'auth/email-already-in-use') return 'An account with this email already exists. Try signing in instead.';
   if (code === 'auth/user-not-found' || code === 'auth/wrong-password') return 'Incorrect email or password.';
   if (code === 'auth/invalid-credential') return 'Incorrect email or password. If you are new here, switch to Sign Up and create an account first.';
-  if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
+  if (code === 'auth/weak-password') return 'Password must be at least 8 characters and include a letter and a number.';
   if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
   if (code === 'auth/too-many-requests') return 'Too many attempts. Please wait a minute and try again.';
   if (code === 'auth/network-request-failed') return 'Network error. Check your connection and try again.';

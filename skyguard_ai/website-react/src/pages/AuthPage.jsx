@@ -2,10 +2,20 @@ import React, { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+const PASSWORD_MIN = 8;
+
+function validatePassword(pw) {
+  if (pw.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) {
+    return 'Password must include at least one letter and one number.';
+  }
+  return '';
+}
+
 function scorePassword(pw) {
   let score = 0;
-  if (pw.length >= 6) score += 1;
-  if (pw.length >= 10) score += 1;
+  if (pw.length >= PASSWORD_MIN) score += 1;
+  if (pw.length >= 12) score += 1;
   if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score += 1;
   if (/\d/.test(pw)) score += 1;
   if (/[^a-zA-Z0-9]/.test(pw)) score += 1;
@@ -32,7 +42,12 @@ export default function AuthPage() {
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from || '/location';
+  // Only allow same-origin redirects after login (blocks open-redirect abuse).
+  const rawFrom = location.state?.from;
+  const from =
+    typeof rawFrom === 'string' && rawFrom.startsWith('/') && !rawFrom.startsWith('//')
+      ? rawFrom
+      : '/location';
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'skyguard-ai-1ac3f';
   const consoleProvidersUrl = `https://console.firebase.google.com/project/${projectId}/authentication/providers`;
   const isProviderDisabled = error.includes('FIREBASE_PROVIDER_DISABLED');
@@ -56,8 +71,9 @@ export default function AuthPage() {
       return;
     }
     if (mode === 'signup') {
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters.');
+      const pwError = validatePassword(password);
+      if (pwError) {
+        setError(pwError);
         return;
       }
       if (password !== confirm) {
@@ -176,6 +192,7 @@ export default function AuthPage() {
                     type="email"
                     placeholder="you@example.com"
                     autoComplete="email"
+                    maxLength={254}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -188,8 +205,9 @@ export default function AuthPage() {
                   <input
                     id="auth-password"
                     type={showPw ? 'text' : 'password'}
-                    placeholder={mode === 'signup' ? 'Min. 6 characters' : 'Your password'}
+                    placeholder={mode === 'signup' ? 'Min. 8 chars, letter + number' : 'Your password'}
                     autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    maxLength={128}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -233,6 +251,7 @@ export default function AuthPage() {
                         type={showConfirm ? 'text' : 'password'}
                         placeholder="Repeat password"
                         autoComplete="new-password"
+                        maxLength={128}
                         value={confirm}
                         onChange={(e) => setConfirm(e.target.value)}
                         required

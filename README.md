@@ -88,3 +88,4 @@ This project currently uses synthetic data and is intended as a prototype. Real-
 **SkyGuard AI**
 
 Intelligent anomaly detection for Automatic Weather Stations.
+ 

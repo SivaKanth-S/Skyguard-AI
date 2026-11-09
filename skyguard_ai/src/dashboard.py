@@ -675,7 +675,7 @@ def update_alert_table(data):
 # ─────────────────────────────────────────
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  SkyGuard AI Dashboard")
-    print("  URL: http://localhost:8050")
+    print(f"  SkyGuard AI Dashboard (no auth — loopback only by default)")
+    print(f"  URL: http://{cfg.DASH_HOST}:{cfg.DASH_PORT}")
     print("="*60 + "\n")
-    app.run(debug=False, host="0.0.0.0", port=8050)
+    app.run(debug=False, host=cfg.DASH_HOST, port=cfg.DASH_PORT)

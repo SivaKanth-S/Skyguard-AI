@@ -1,8 +1,0 @@
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-  "python.analysis.extraPaths": [
-    "${workspaceFolder}/skyguard_ai",
-    "${workspaceFolder}/skyguard_ai/src",
-    "${workspaceFolder}/skyguard_ai/configs"
-  ]
-}

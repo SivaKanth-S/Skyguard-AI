@@ -157,7 +157,7 @@ def cmd_db_sync(args=None):
         print_table_counts()
     except Exception as e:
         print(f"[SkyGuard] Database sync failed: {e}")
-        print("  Ensure MySQL server is running and credentials in .env or config are correct.")
+        print("  Ensure MySQL server is running and MYSQL_* variables are set in skyguard_ai/.env.")
 
 
 def cmd_db_status(args=None):
@@ -171,7 +171,7 @@ def cmd_db_status(args=None):
         print_table_counts()
     except Exception as e:
         print(f"[SkyGuard] Database query failed: {e}")
-        print("  Ensure MySQL server is running and credentials in .env or config are correct.")
+        print("  Ensure MySQL server is running and MYSQL_* variables are set in skyguard_ai/.env.")
 
 
 COMMANDS = {

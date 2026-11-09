@@ -8,23 +8,60 @@ html, body {
   padding: 0;
   width: 100%;
   min-height: 100%;
+  overflow-x: clip;
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow-x: clip;
 }
 
 .app-container {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
+  overflow-x: clip;
 }
 
 main {
   flex: 1;
   width: 100%;
+  min-width: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Media never forces horizontal scroll */
+img, video, canvas, svg {
+  max-width: 100%;
+}
+
+/* Fixed nav offset respects notched phones */
+.nav {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Coarse-pointer: comfortable tap targets without changing desktop layout */
+@media (pointer: coarse) {
+  .btn, .ftab, .ptab, .loc-tab, .sp-btn, .loc-btn {
+    min-height: 44px;
+  }
+  a, button {
+    touch-action: manipulation;
+  }
 }

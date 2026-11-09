@@ -80,6 +80,7 @@ function PersistentRoutePill() {
 
   return (
     <Link
+      className="persistent-route-pill"
       to="/location"
       title="Back to Route Planner — your route is still open"
       style={{

@@ -493,7 +493,7 @@ export default function StationMap({
 
       {/* MAP WRAPPER */}
       <div className="map-wrap">
-        <div id="tnMap" ref={mapRef} className={addMode ? 'add-mode' : ''} style={{ height: '520px' }}></div>
+        <div id="tnMap" ref={mapRef} className={addMode ? 'add-mode' : ''}></div>
 
         {addMode && (
           <div className="add-hint-banner show">
@@ -528,7 +528,7 @@ export default function StationMap({
 
         {/* Selected Station Info Popup */}
         {currentSt && (
-          <div className="map-info-popup" style={{ top: '56px', display: 'block' }}>
+          <div className="map-info-popup">
             <div className="mip-name">
               📍 {currentSt.name}
             </div>

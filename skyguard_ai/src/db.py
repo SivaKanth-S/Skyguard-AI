@@ -4,9 +4,12 @@ Handles connection, schema initialization, bulk CSV imports, and real-time strea
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
+
+IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # Load .env if present
 try:
@@ -34,12 +37,22 @@ except ImportError:
 
 
 def get_db_config():
-    """Returns database configuration dictionary from environment variables."""
+    """Returns database configuration dictionary from environment variables.
+
+    MYSQL_PASSWORD has no default: the connection fails loudly instead of
+    silently falling back to a well-known credential.
+    """
+    password = os.getenv("MYSQL_PASSWORD")
+    if not password:
+        raise RuntimeError(
+            "MYSQL_PASSWORD is not set. Copy skyguard_ai/.env.example to .env "
+            "and set a strong password, or export MYSQL_PASSWORD first."
+        )
     return {
         "host": os.getenv("MYSQL_HOST", "localhost"),
         "port": int(os.getenv("MYSQL_PORT", 3306)),
         "user": os.getenv("MYSQL_USER", "root"),
-        "password": os.getenv("MYSQL_PASSWORD", "Siva143sk"),
+        "password": password,
         "database": os.getenv("MYSQL_DATABASE", "skyguard_db"),
     }
 
@@ -76,6 +89,13 @@ def init_db():
     """Creates the database and tables if they do not exist."""
     cfg = get_db_config()
     db_name = cfg["database"]
+
+    # Identifiers cannot be parameterized, so allow only safe characters
+    # before interpolating the name into CREATE DATABASE.
+    if not IDENTIFIER_RE.match(db_name):
+        raise ValueError(
+            f"Invalid MYSQL_DATABASE value {db_name!r}; use letters, digits and underscores only."
+        )
 
     print(f"Connecting to MySQL server at {cfg['host']}:{cfg['port']} as '{cfg['user']}'...")
     server_conn = get_connection(include_db=False)

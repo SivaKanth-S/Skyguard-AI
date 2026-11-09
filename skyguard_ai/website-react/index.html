@@ -1,27 +1,28 @@
-<!doctype html>
+<!doctype html>  
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="SkyGuard AI — Intelligent Real-Time Anomaly Detection & Self-Healing for Weather Stations using Hybrid ML Pipelines and SHAP Explainability." />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>SkyGuard AI — Weather Station Anomaly Intelligence</title>
-    <!-- Pre-apply theme to prevent flash -->
-    <script>
-      (function(){
-        try {
-          const t = localStorage.getItem('skyguard_theme') || 'dark';
-          document.documentElement.setAttribute('data-theme', t);
-        } catch(e){}
-      })();
-    </script>
+    <!-- Pre-apply theme to prevent flash (external file so CSP can disallow inline scripts) -->
+    <script src="/theme-init.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
     <!-- Leaflet CSS (CDN fast path; components also bundle leaflet/dist/leaflet.css locally as fallback) -->
-    <!-- NOTE: no integrity hash on purpose — a mismatched SRI silently blocks the
-         stylesheet in some browsers, leaving the map unstyled/broken. -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"
+      integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w=="
+      crossorigin="anonymous"
+    />
   </head>
   <body>
     <div id="root"></div>

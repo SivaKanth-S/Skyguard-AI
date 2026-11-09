@@ -2,6 +2,7 @@
 SkyGuard AI — Central Configuration
 All paths, thresholds, and hyperparameters live here.
 """
+import os
 from pathlib import Path
 
 # ─── Root paths ───────────────────────────────────────────────
@@ -53,8 +54,11 @@ BUFFER_SIZE             = 144   # 24 hours at 10-min intervals
 MIN_CONFIDENCE_TO_ALERT = 0.25
 
 # ─── Dashboard ────────────────────────────────────────────────
-DASH_HOST = "0.0.0.0"
-DASH_PORT = 8050
+# Bind to loopback by default: the dashboard has no authentication, so
+# exposing it on 0.0.0.0 lets anyone on the network read the telemetry UI.
+# Override with DASH_HOST=0.0.0.0 only on a trusted, firewalled network.
+DASH_HOST = os.getenv("DASH_HOST", "127.0.0.1")
+DASH_PORT = int(os.getenv("DASH_PORT", 8050))
 
 # ─── Training data ────────────────────────────────────────────
 TRAIN_HOURS         = 4320   # 180 days
